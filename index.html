@@ -1,0 +1,760 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Seven interactive experiments on RS485: differential signaling, the H-bridge driver, ground offset, termination, bias, UART framing and multi-drop addressing.">
+<style>body{margin:0}</style>
+<title>RS485 Bench</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one reading column of numbered bench experiments; each has short prose, "try this" prompts, then an instrument panel */
+:root{
+  --bg:#f2f5f6; --surface:#ffffff; --ink:#13212a; --muted:#56676f; --line:#d4dde1; --chip:#eaf0f2;
+  --scope:#fbfdfd; --grid:#e1e8eb;
+  --wire-a:#d0501a; --wire-b:#1f6cc4; --diff:#7643c4; --gnd:#6b7a82;
+  --ok:#1f7f46; --bad:#c22f2f; --warn:#a86d12;
+  --band:rgba(200,140,30,.17); --okband:rgba(31,127,70,.09); --badband:rgba(194,47,47,.07); --drive:rgba(31,108,196,.07);
+  --accent:#0d7480; --accent-ink:#ffffff;
+  --f-display:"Archivo","Helvetica Neue",Arial,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e1418; --surface:#141c21; --ink:#e3ebee; --muted:#93a3ab; --line:#26333a; --chip:#1c272d;
+  --scope:#0b1115; --grid:#1b262c;
+  --wire-a:#ff8150; --wire-b:#5ea8ff; --diff:#b690ff; --gnd:#8a99a1;
+  --ok:#4fc47d; --bad:#ff6d6d; --warn:#e3a640;
+  --band:rgba(227,166,64,.16); --okband:rgba(79,196,125,.09); --badband:rgba(255,109,109,.08); --drive:rgba(94,168,255,.08);
+  --accent:#3eb4bd; --accent-ink:#06191b; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1418; --surface:#141c21; --ink:#e3ebee; --muted:#93a3ab; --line:#26333a; --chip:#1c272d;
+  --scope:#0b1115; --grid:#1b262c;
+  --wire-a:#ff8150; --wire-b:#5ea8ff; --diff:#b690ff; --gnd:#8a99a1;
+  --ok:#4fc47d; --bad:#ff6d6d; --warn:#e3a640;
+  --band:rgba(227,166,64,.16); --okband:rgba(79,196,125,.09); --badband:rgba(255,109,109,.08); --drive:rgba(94,168,255,.08);
+  --accent:#3eb4bd; --accent-ink:#06191b; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.6;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 64px}
+main{max-width:980px;margin:0 auto}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;letter-spacing:-.01em}
+h1{font-size:clamp(2.4rem,7vw,4rem);font-weight:800;line-height:1}
+h2{font-size:clamp(1.5rem,3.6vw,2rem);font-weight:700;line-height:1.15}
+h3{font-size:1rem;font-weight:700}
+p{margin:0;max-width:66ch}
+code,.mono{font-family:var(--f-mono);font-size:.92em}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.hero{padding-block:56px 32px;display:grid;gap:20px}
+.hero .lede{font-size:1.15rem;color:var(--muted);max-width:60ch}
+.legend{display:flex;flex-wrap:wrap;gap:8px 20px;font-family:var(--f-mono);font-size:13px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:8px}
+.legend i{display:inline-block;width:18px;height:3px;border-radius:2px}
+.toc{display:flex;flex-wrap:wrap;gap:8px;list-style:none;padding:0;margin:0;counter-reset:t}
+.toc a{display:inline-flex;gap:8px;align-items:baseline;text-decoration:none;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:14px}
+.toc a:hover{border-color:var(--accent)}
+.toc a b{font-family:var(--f-mono);font-weight:500;color:var(--accent);font-size:12px}
+
+section{border-top:1px solid var(--line);padding-block:48px;display:grid;gap:18px;scroll-margin-top:12px}
+.eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.prose{display:grid;gap:12px}
+.try{border-left:3px solid var(--accent);border-radius:0;padding:4px 0 4px 14px;display:grid;gap:4px}
+.try h3{font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-family:var(--f-mono);font-weight:500}
+.try ul{margin:0;padding-left:18px;display:grid;gap:3px;max-width:64ch}
+
+.lab{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:grid;gap:14px;min-width:0}
+.ctrls{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px 20px;align-items:end}
+.ctrl{display:grid;gap:4px;min-width:0}
+.ctrl label,.ctrl .lbl{font-size:13px;color:var(--muted);display:flex;justify-content:space-between;gap:8px}
+.ctrl output{font-family:var(--f-mono);color:var(--ink);font-size:13px}
+input[type=range]{width:100%;accent-color:var(--accent)}
+select,input[type=text]{font:inherit;font-size:14px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%}
+.seg{display:flex;flex-wrap:wrap;gap:0;border:1px solid var(--line);border-radius:6px;overflow:hidden;width:max-content;max-width:100%}
+.seg button{font:inherit;font-size:13px;border:0;background:transparent;color:var(--ink);padding:6px 11px;cursor:pointer;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.btn{font:inherit;font-size:14px;font-weight:500;border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);border-radius:6px;padding:7px 14px;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--accent)}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.presets .btn{font-size:13px;padding:5px 10px}
+.check{display:flex;gap:8px;align-items:center;font-size:14px;cursor:pointer}
+.check input{accent-color:var(--accent);width:16px;height:16px}
+
+canvas.scope{display:block;width:100%;border:1px solid var(--line);border-radius:6px}
+.cap{font-size:12px;color:var(--muted);font-family:var(--f-mono)}
+
+.readouts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.ro{background:var(--chip);border-radius:6px;padding:8px 10px;display:grid;gap:2px;min-width:0}
+.ro span{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-family:var(--f-mono)}
+.ro b{font-family:var(--f-mono);font-weight:500;font-size:17px;font-variant-numeric:tabular-nums}
+.ok{color:var(--ok)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+.status{font-size:14px;padding:8px 12px;border-radius:6px;border:1px solid var(--line);background:var(--bg)}
+.status.ok{border-color:var(--ok)} .status.bad{border-color:var(--bad)} .status.warn{border-color:var(--warn)}
+.formula{font-family:var(--f-mono);font-size:13px;color:var(--muted);overflow-x:auto;white-space:nowrap}
+
+.bits{display:grid;grid-template-columns:96px minmax(0,1fr);gap:6px 10px;align-items:center;font-size:13px}
+.bits .lbl{color:var(--muted)}
+.cells{display:grid;grid-template-columns:repeat(16,minmax(0,1fr));gap:2px}
+.cell{font-family:var(--f-mono);font-size:12px;text-align:center;border-radius:3px;background:var(--chip);padding:2px 0}
+.cell.err{background:var(--badband);color:var(--bad);outline:1px solid var(--bad)}
+
+.split{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:16px;align-items:center}
+@media (max-width:720px){.split{grid-template-columns:minmax(0,1fr)}}
+svg.sch{width:100%;height:auto;display:block}
+.sch .w{stroke:var(--muted);stroke-width:2;fill:none}
+.sch .rail{stroke:var(--ink);stroke-width:2.5}
+.sch .t{fill:var(--ink);font-family:var(--f-mono);font-size:13px}
+.sch .ts{fill:var(--muted);font-family:var(--f-mono);font-size:11px}
+.sch .blade{stroke:var(--ink);stroke-width:3;stroke-linecap:round;transition:transform .25s ease}
+.sch .on .blade{stroke:var(--accent)}
+.sch .dot{fill:var(--ink)}
+.sch #ipath{stroke:var(--accent);stroke-width:5;fill:none;opacity:.35;stroke-dasharray:10 8}
+@media (prefers-reduced-motion:no-preference){.sch #ipath{animation:flow .7s linear infinite}}
+@keyframes flow{to{stroke-dashoffset:-18}}
+
+.frame-map{display:flex;flex-wrap:wrap;gap:4px}
+.fb{font-family:var(--f-mono);font-size:12px;border:1px solid var(--line);border-radius:4px;padding:3px 6px;display:grid;text-align:center;min-width:52px;background:var(--bg)}
+.fb small{font-size:10px;color:var(--muted);font-family:var(--f-body)}
+.fb.live{border-color:var(--accent);background:var(--accent);color:var(--accent-ink)}
+.fb.live small{color:var(--accent-ink)}
+.bus{display:grid;gap:8px;padding:12px;border:1px dashed var(--line);border-radius:8px;background:var(--bg)}
+.bus-line{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:14px}
+.bus-byte{font-family:var(--f-mono);font-size:22px;font-weight:500;min-width:3.2ch}
+.nodes{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.node{border:1px solid var(--line);border-radius:8px;padding:10px;display:grid;gap:6px;align-content:start;min-width:0;background:var(--surface)}
+.node.drive{border-color:var(--accent)}
+.node-h{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.node-h b{font-family:var(--f-display);font-size:15px}
+.tag{font-family:var(--f-mono);font-size:11px;border-radius:999px;padding:1px 8px;background:var(--chip);color:var(--muted);white-space:nowrap}
+.tag.on{background:var(--accent);color:var(--accent-ink)}
+.node .state{font-size:13px;min-height:2.6em;color:var(--muted)}
+.node .state.ok{color:var(--ok)} .node .state.bad{color:var(--bad)}
+.log{display:flex;flex-wrap:wrap;gap:3px;min-height:22px}
+.lb{font-family:var(--f-mono);font-size:11px;background:var(--chip);border-radius:3px;padding:1px 4px}
+.lb.addr{outline:1px solid var(--accent)}
+.lb.dim{opacity:.45}
+.lb.badb{background:var(--badband);color:var(--bad)}
+.lb.sep{background:transparent;color:var(--muted)}
+.err-msg{color:var(--bad);font-size:13px;min-height:1.2em}
+footer{border-top:1px solid var(--line);padding-top:24px;color:var(--muted);font-size:14px}
+@media (max-width:520px){.bits{grid-template-columns:minmax(0,1fr)} .cell{font-size:10px}}
+</style>
+</head>
+<body>
+
+<main>
+  <header class="hero">
+    <div class="eyebrow">Interactive bench · TIA/EIA-485</div>
+    <h1>RS485 Bench</h1>
+    <p class="lede">Seven experiments that build RS485 up from the wire: why two wires beat one, what the driver does, why ground offset is tolerated, why cables need termination, what bias is for, how a UART frames a byte, and how many devices share one pair.</p>
+    <div class="legend" aria-label="Trace colors">
+      <span><i style="background:var(--wire-a)"></i>Wire A</span>
+      <span><i style="background:var(--wire-b)"></i>Wire B</span>
+      <span><i style="background:var(--diff)"></i>A − B (what the receiver sees)</span>
+      <span><i style="background:var(--band);height:10px"></i>±200 mV undefined zone</span>
+    </div>
+    <ul class="toc">
+      <li><a href="#two-wires"><b>1</b>Two wires</a></li>
+      <li><a href="#driver"><b>2</b>The driver</a></li>
+      <li><a href="#ground"><b>3</b>Ground offset</a></li>
+      <li><a href="#termination"><b>4</b>Termination</a></li>
+      <li><a href="#bias"><b>5</b>Bias and the idle bus</a></li>
+      <li><a href="#uart"><b>6</b>Framing a byte</a></li>
+      <li><a href="#multidrop"><b>7</b>Many devices, one pair</a></li>
+    </ul>
+  </header>
+
+  <!-- 1 -->
+  <section id="two-wires">
+    <div class="eyebrow">Experiment 1</div>
+    <h2>Two wires, one difference</h2>
+    <div class="prose">
+      <p>Each bit is sent on two wires driven in opposite directions. The receiver ignores each wire's voltage on its own and only looks at <b>A − B</b>. Above +200 mV it reads 1; below −200 mV it reads 0.</p>
+      <p>Interference on a twisted pair hits both wires almost equally. That shared shift is <i>common-mode</i> noise, and it disappears in the subtraction. A single-ended receiver, which compares one wire to ground like RS232 does, has no way to remove it.</p>
+    </div>
+    <div class="try"><h3>Try this</h3><ul>
+      <li>Push common-mode noise to 7 V. The wires swing wildly, the differential receiver still reads every bit.</li>
+      <li>Press <i>Untwisted wire</i>. Noise that hits one wire more than the other is what really breaks RS485.</li>
+      <li>Lower the signal swing until errors appear. That is the noise margin between the driver's 1.5 V and the receiver's 0.2 V.</li>
+    </ul></div>
+    <div class="lab">
+      <div class="row presets">
+        <button class="btn ghost" data-p="0.3,0.05,2.3">Quiet bench</button>
+        <button class="btn ghost" data-p="6,0.05,2.3">Motor nearby</button>
+        <button class="btn ghost" data-p="2,1.3,2.3">Untwisted wire</button>
+        <button class="btn ghost" data-p="3,0.25,0.45">Long, lossy cable</button>
+      </div>
+      <div class="ctrls">
+        <div class="ctrl"><label for="m1-cm">Common-mode noise <output id="m1-cm-o"></output></label><input type="range" id="m1-cm" min="0" max="7" step="0.1" value="2"></div>
+        <div class="ctrl"><label for="m1-dn">Differential noise <output id="m1-dn-o"></output></label><input type="range" id="m1-dn" min="0" max="2" step="0.05" value="0.1"></div>
+        <div class="ctrl"><label for="m1-vod">Signal swing |A − B| <output id="m1-vod-o"></output></label><input type="range" id="m1-vod" min="0.1" max="3" step="0.05" value="2.3"></div>
+      </div>
+      <canvas class="scope" id="m1-wires" data-h="200" aria-label="Wire A and B voltages against ground"></canvas>
+      <canvas class="scope" id="m1-diff" data-h="160" aria-label="Differential voltage A minus B"></canvas>
+      <div class="bits">
+        <span class="lbl">Sent</span><div class="cells" id="m1-sent"></div>
+        <span class="lbl">Differential RX</span><div class="cells" id="m1-rx"></div>
+        <span class="lbl">Single-ended RX</span><div class="cells" id="m1-se"></div>
+      </div>
+      <div class="readouts">
+        <div class="ro"><span>Differential errors</span><b id="m1-e1"></b></div>
+        <div class="ro"><span>Single-ended errors</span><b id="m1-e2"></b></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section id="driver">
+    <div class="eyebrow">Experiment 2</div>
+    <h2>The driver is four switches</h2>
+    <div class="prose">
+      <p>The driver doesn't choose a voltage. It's an H-bridge: to send 1 it connects A toward the supply and B toward ground, and to send 0 it swaps them. A 0 isn't a negative voltage on a wire. It's the same two voltages, swapped.</p>
+      <p>The levels you measure come from the supply, the transistor drops, and the load. The standard only requires at least <b>1.5 V</b> of difference into 54 Ω, which is two 120 Ω terminators plus 32 receivers.</p>
+    </div>
+    <div class="try"><h3>Try this</h3><ul>
+      <li>Toggle the bit and watch which switches close and which way current flows through the load.</li>
+      <li>Change the load from open to 54 Ω. The swing shrinks because the driver has internal resistance.</li>
+      <li>Switch to 3.3 V. It still passes the 1.5 V spec, with less margin.</li>
+    </ul></div>
+    <div class="lab">
+      <div class="ctrls">
+        <div class="ctrl"><span class="lbl">Bit to send</span><div class="seg" id="m2-bit"><button data-v="1" aria-pressed="true">1 (mark)</button><button data-v="0" aria-pressed="false">0 (space)</button></div></div>
+        <div class="ctrl"><span class="lbl">Supply</span><div class="seg" id="m2-vcc"><button data-v="5" aria-pressed="true">5 V</button><button data-v="3.3" aria-pressed="false">3.3 V</button></div></div>
+        <div class="ctrl"><span class="lbl">Bus load</span><div class="seg" id="m2-load"><button data-v="0" aria-pressed="false">Open</button><button data-v="120" aria-pressed="false">120 Ω</button><button data-v="60" aria-pressed="true">60 Ω</button><button data-v="54" aria-pressed="false">54 Ω</button></div></div>
+      </div>
+      <div class="split">
+        <svg class="sch" viewBox="0 0 560 300" role="img" aria-labelledby="m2-title">
+          <title id="m2-title">H-bridge driver with four switches feeding wires A and B through the bus load</title>
+          <path id="ipath" d=""/>
+          <line class="rail" x1="90" y1="30" x2="470" y2="30"/>
+          <line class="rail" x1="90" y1="270" x2="470" y2="270"/>
+          <text class="t" x="20" y="34">VCC</text>
+          <text class="t" x="20" y="274">GND</text>
+          <path class="w" d="M150 30V60M150 110V190M150 240V270M410 30V60M410 110V190M410 240V270"/>
+          <path class="w" d="M150 150H232l6-12 10 24 10-24 10 24 10-24 10 24 10-24 10 24 6-12H410"/>
+          <g id="q1"><circle class="dot" cx="150" cy="60" r="3.5"/><circle class="dot" cx="150" cy="110" r="3.5"/><line class="blade" x1="150" y1="60" x2="150" y2="110" style="transform-origin:150px 60px"/><text class="ts" x="166" y="90">Q1</text></g>
+          <g id="q2"><circle class="dot" cx="150" cy="190" r="3.5"/><circle class="dot" cx="150" cy="240" r="3.5"/><line class="blade" x1="150" y1="190" x2="150" y2="240" style="transform-origin:150px 190px"/><text class="ts" x="166" y="220">Q2</text></g>
+          <g id="q3"><circle class="dot" cx="410" cy="60" r="3.5"/><circle class="dot" cx="410" cy="110" r="3.5"/><line class="blade" x1="410" y1="60" x2="410" y2="110" style="transform-origin:410px 60px"/><text class="ts" x="370" y="90">Q3</text></g>
+          <g id="q4"><circle class="dot" cx="410" cy="190" r="3.5"/><circle class="dot" cx="410" cy="240" r="3.5"/><line class="blade" x1="410" y1="190" x2="410" y2="240" style="transform-origin:410px 190px"/><text class="ts" x="370" y="220">Q4</text></g>
+          <circle cx="150" cy="150" r="5" fill="var(--wire-a)"/><circle cx="410" cy="150" r="5" fill="var(--wire-b)"/>
+          <text class="t" x="96" y="146" fill="var(--wire-a)" style="fill:var(--wire-a)">A</text>
+          <text class="ts" x="76" y="166" id="m2-va"></text>
+          <text class="t" x="452" y="146" style="fill:var(--wire-b)">B</text>
+          <text class="ts" x="432" y="166" id="m2-vb"></text>
+          <text class="ts" x="280" y="190" text-anchor="middle" id="m2-loadlbl"></text>
+        </svg>
+        <div style="display:grid;gap:10px">
+          <div class="readouts">
+            <div class="ro"><span>A to GND</span><b id="m2-a"></b></div>
+            <div class="ro"><span>B to GND</span><b id="m2-b"></b></div>
+            <div class="ro"><span>A − B</span><b id="m2-d"></b></div>
+            <div class="ro"><span>Load current</span><b id="m2-i"></b></div>
+          </div>
+          <div class="status" id="m2-status"></div>
+          <p class="cap">Simplified model: each driver leg drops about 0.35 V and has about 17 Ω of output resistance.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section id="ground">
+    <div class="eyebrow">Experiment 3</div>
+    <h2>Ground offset doesn't flip bits</h2>
+    <div class="prose">
+      <p>Over long runs, the sender's ground and the receiver's ground drift apart. From the receiver's side, that offset is added to <i>both</i> wires, so it cancels when you subtract: (A + offset) − (B + offset) = A − B. The sign of the bit survives in either direction.</p>
+      <p>The limit is the receiver's input window, <b>−7 V to +12 V</b> relative to its own ground. Outside it, the input circuitry can't subtract accurately and protection diodes start to conduct. That's why installations still run a ground reference wire or use isolated transceivers.</p>
+    </div>
+    <div class="try"><h3>Try this</h3><ul>
+      <li>Drag the offset both ways. A − B keeps the same value and sign on both sides.</li>
+      <li>Push the offset past +9 V or below −8 V and watch a wire leave the green window.</li>
+    </ul></div>
+    <div class="lab">
+      <div class="ctrls">
+        <div class="ctrl"><label for="m3-off">Sender GND relative to receiver GND <output id="m3-off-o"></output></label><input type="range" id="m3-off" min="-15" max="20" step="0.5" value="3"></div>
+        <div class="ctrl"><span class="lbl">Bit</span><div class="seg" id="m3-bit"><button data-v="1" aria-pressed="true">1</button><button data-v="0" aria-pressed="false">0</button></div></div>
+      </div>
+      <canvas class="scope" id="m3-cv" data-h="360" aria-label="Wire voltages seen from the sender and from the receiver"></canvas>
+      <div class="readouts">
+        <div class="ro"><span>A − B at sender</span><b id="m3-ds"></b></div>
+        <div class="ro"><span>A − B at receiver</span><b id="m3-dr"></b></div>
+        <div class="ro"><span>Receiver reads</span><b id="m3-read"></b></div>
+      </div>
+      <div class="status" id="m3-status"></div>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section id="termination">
+    <div class="eyebrow">Experiment 4</div>
+    <h2>Termination and reflections</h2>
+    <div class="prose">
+      <p>A twisted pair behaves like a transmission line with a characteristic impedance of about <b>120 Ω</b>. An edge travels down it at roughly 5 ns per metre. If the far end isn't terminated with 120 Ω, part of the edge reflects back, hits the low-impedance driver, reflects again, and rings.</p>
+      <p>Ringing only causes errors if it hasn't died out by the time the receiver samples the bit, near the middle. That depends on cable length, edge speed and bit time, which is why slow, short buses often work unterminated.</p>
+    </div>
+    <div class="try"><h3>Try this</h3><ul>
+      <li>Open far end, 100 m, fast edges: look at the overshoot and ringing in the zoomed edge.</li>
+      <li>Keep it open but drop to 9600 baud. The ringing is still there, it just ends long before the sample point.</li>
+      <li>Go to 1 Mbps with 300 m unterminated, then add 120 Ω.</li>
+      <li>Try slew-limited edges on an open line: slow edges barely ring on short cables.</li>
+    </ul></div>
+    <div class="lab">
+      <div class="ctrls">
+        <div class="ctrl"><label for="m4-len">Cable length <output id="m4-len-o"></output></label><input type="range" id="m4-len" min="0" max="1000" step="1" value="650"></div>
+        <div class="ctrl"><span class="lbl">Far-end termination</span><div class="seg" id="m4-rl"><button data-v="inf" aria-pressed="true">Open</button><button data-v="120" aria-pressed="false">120 Ω</button><button data-v="60" aria-pressed="false">60 Ω</button><button data-v="330" aria-pressed="false">330 Ω</button></div></div>
+        <div class="ctrl"><span class="lbl">Baud rate</span><div class="seg" id="m4-baud"><button data-v="9600" aria-pressed="false">9600</button><button data-v="115200" aria-pressed="false">115k</button><button data-v="1000000" aria-pressed="true">1M</button><button data-v="10000000" aria-pressed="false">10M</button></div></div>
+        <div class="ctrl"><span class="lbl">Driver edges</span><div class="seg" id="m4-tr"><button data-v="10e-9" aria-pressed="true">Fast, 10 ns</button><button data-v="500e-9" aria-pressed="false">Slew-limited, 0.5 µs</button></div></div>
+      </div>
+      <canvas class="scope" id="m4-edge" data-h="200" aria-label="One edge at the driver and at the far end"></canvas>
+      <canvas class="scope" id="m4-stream" data-h="190" aria-label="Bit stream at the far end with sample points"></canvas>
+      <div class="readouts">
+        <div class="ro"><span>One-way delay</span><b id="m4-td"></b></div>
+        <div class="ro"><span>Far-end reflection Γ</span><b id="m4-gl"></b></div>
+        <div class="ro"><span>Ringing settles after</span><b id="m4-settle"></b></div>
+        <div class="ro"><span>Receiver samples at</span><b id="m4-sample"></b></div>
+      </div>
+      <div class="status" id="m4-status"></div>
+      <p class="cap">Lossless line model, Z0 = 120 Ω, driver output 34 Ω (Γ ≈ −0.56). Real cable also attenuates over long runs.</p>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section id="bias">
+    <div class="eyebrow">Experiment 5</div>
+    <h2>Bias and the idle bus</h2>
+    <div class="prose">
+      <p>Between messages no driver is on. The terminators tie A and B together, so A − B sits near <b>0 V</b>. That isn't safely below a threshold: a real receiver switches somewhere near 0 V, and ±200 mV is only the worst-case guarantee. A few millivolts of differential noise flips the output, and each dip to 0 looks like a UART start bit.</p>
+      <p>Bias is a pull-up on A and a pull-down on B, placed once on the bus. With the terminators it forms a voltage divider that holds the idle bus at about +250 mV, beyond every receiver's threshold.</p>
+    </div>
+    <div class="try"><h3>Try this</h3><ul>
+      <li>Turn bias off. Garbage bytes appear in the long gap between the two real messages.</li>
+      <li>Turn it back on and raise the noise. The idle level now has margin.</li>
+      <li>Pick 4.7 kΩ bias with two terminators. Too weak to beat 60 Ω, so the margin is gone.</li>
+      <li>Switch to a true fail-safe receiver with bias off. Its threshold is shifted negative, so 0 V already reads as 1.</li>
+    </ul></div>
+    <div class="lab">
+      <div class="ctrls">
+        <div class="ctrl"><span class="lbl">Bias resistors</span><label class="check"><input type="checkbox" id="m5-on" checked> Fitted on the bus</label></div>
+        <div class="ctrl"><label for="m5-r">Bias resistor value</label><select id="m5-r"><option value="390">390 Ω</option><option value="560" selected>560 Ω</option><option value="680">680 Ω</option><option value="1000">1 kΩ</option><option value="4700">4.7 kΩ</option></select></div>
+        <div class="ctrl"><span class="lbl">Supply</span><div class="seg" id="m5-vcc"><button data-v="5" aria-pressed="true">5 V</button><button data-v="3.3" aria-pressed="false">3.3 V</button></div></div>
+        <div class="ctrl"><span class="lbl">Terminators</span><div class="seg" id="m5-term"><button data-v="0" aria-pressed="false">None</button><button data-v="1" aria-pressed="false">One</button><button data-v="2" aria-pressed="true">Two</button></div></div>
+        <div class="ctrl"><label for="m5-n">Differential noise on idle bus <output id="m5-n-o"></output></label><input type="range" id="m5-n" min="0" max="150" step="1" value="40"></div>
+        <div class="ctrl"><span class="lbl">Receiver</span><div class="seg" id="m5-rx"><button data-v="std" aria-pressed="true">Standard</button><button data-v="fs" aria-pressed="false">True fail-safe</button></div></div>
+      </div>
+      <p class="formula" id="m5-formula"></p>
+      <canvas class="scope" id="m5-diff" data-h="210" aria-label="A minus B over time, zoomed to plus and minus 0.6 volts"></canvas>
+      <canvas class="scope" id="m5-rxc" data-h="120" aria-label="Receiver output and bytes decoded by the UART"></canvas>
+      <div class="readouts">
+        <div class="ro"><span>Idle A − B</span><b id="m5-idle"></b></div>
+        <div class="ro"><span>Margin vs 200 mV</span><b id="m5-margin"></b></div>
+        <div class="ro"><span>Bias current</span><b id="m5-i"></b></div>
+        <div class="ro"><span>Garbage bytes</span><b id="m5-g"></b></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 -->
+  <section id="uart">
+    <div class="eyebrow">Experiment 6</div>
+    <h2>How a UART frames a byte</h2>
+    <div class="prose">
+      <p>The idle line is 1. A byte begins with a <b>start bit</b> (0), then 8 data bits, least significant first, then a <b>stop bit</b> (1). The receiver waits for the falling edge, checks half a bit later that the line is still 0, then samples each bit in its middle.</p>
+      <p>There is no clock wire, so both sides must agree on the baud rate. A small clock error is absorbed because the receiver re-synchronizes on every start bit, but the error builds up over the 10 bits of the frame.</p>
+    </div>
+    <div class="try"><h3>Try this</h3><ul>
+      <li>Type a character and press <i>Sample</i> to watch the receiver take its samples one by one.</li>
+      <li>Slide the receiver clock error to ±4 %, then ±6 %. The last samples drift into the wrong bit.</li>
+    </ul></div>
+    <div class="lab">
+      <div class="ctrls">
+        <div class="ctrl"><label for="m6-in">Character or hex byte (A, 7, 0x55)</label><input type="text" id="m6-in" value="A" maxlength="4" autocomplete="off" spellcheck="false"><span class="err-msg" id="m6-err"></span></div>
+        <div class="ctrl"><label for="m6-e">Receiver clock error <output id="m6-e-o"></output></label><input type="range" id="m6-e" min="-10" max="10" step="0.5" value="0"></div>
+        <div class="ctrl"><span class="lbl">&nbsp;</span><div class="row"><button class="btn" id="m6-play">Sample</button><button class="btn ghost" id="m6-all">Show all</button></div></div>
+      </div>
+      <canvas class="scope" id="m6-cv" data-h="190" aria-label="Frame of one byte on the line with receiver sample points"></canvas>
+      <div class="readouts">
+        <div class="ro"><span>Sent</span><b id="m6-sent"></b></div>
+        <div class="ro"><span>Bits on the wire</span><b id="m6-wire"></b></div>
+        <div class="ro"><span>Received</span><b id="m6-got"></b></div>
+      </div>
+      <div class="status" id="m6-status"></div>
+    </div>
+  </section>
+
+  <!-- 7 -->
+  <section id="multidrop">
+    <div class="eyebrow">Experiment 7</div>
+    <h2>Many devices, one pair</h2>
+    <div class="prose">
+      <p>Every receiver on the bus hears every byte. Its UART decodes them all in hardware, and the firmware reads the first byte, the address, to decide whether the frame is meant for it. A slave that isn't addressed ignores the content but keeps listening, because it still has to find where the frame ends so it can catch the start of the next one. Modbus RTU marks the end with a silence of 3.5 character times.</p>
+      <p>Only one node may drive at a time. A node turns its driver on (DE), sends, and must wait until the last stop bit has fully left before releasing the bus.</p>
+    </div>
+    <div class="try"><h3>Try this</h3><ul>
+      <li>Send a read to slave 2 and watch slaves 1 and 3 receive every byte but ignore it.</li>
+      <li>Send to address 0. It's a broadcast: every slave acts on it and nobody replies.</li>
+      <li>Tick <i>Release DE too early</i>. The reply's last byte is cut off and the master's CRC check fails.</li>
+    </ul></div>
+    <div class="lab">
+      <div class="ctrls">
+        <div class="ctrl"><span class="lbl">Address</span><div class="seg" id="m7-addr"><button data-v="1" aria-pressed="false">1</button><button data-v="2" aria-pressed="true">2</button><button data-v="3" aria-pressed="false">3</button><button data-v="0" aria-pressed="false">0 broadcast</button></div></div>
+        <div class="ctrl"><span class="lbl">Function</span><div class="seg" id="m7-fn"><button data-v="3" aria-pressed="true">03 read register</button><button data-v="6" aria-pressed="false">06 write register</button></div></div>
+        <div class="ctrl"><label class="check"><input type="checkbox" id="m7-early"> Release DE too early</label><div class="row"><button class="btn" id="m7-go">Send request</button></div></div>
+      </div>
+      <div class="bus" aria-live="polite">
+        <div class="bus-line"><span class="cap">On the wire</span><span class="bus-byte" id="m7-byte">——</span><span id="m7-busnote" class="cap">Bus idle, held at 1 by bias</span></div>
+        <div class="frame-map" id="m7-frame"></div>
+      </div>
+      <div class="nodes" id="m7-nodes"></div>
+    </div>
+  </section>
+
+  <footer>
+    <p>Numbers follow TIA/EIA-485-A where it sets limits (±200 mV thresholds, 1.5 V into 54 Ω, −7 V to +12 V common mode, 32 unit loads). Driver, cable and receiver behaviour beyond that is a simplified model, close to a MAX485-class part, meant for building intuition rather than design sign-off.</p>
+  </footer>
+</main>
+
+<script>
+const $=s=>document.querySelector(s);
+const setText=(id,t)=>{const e=document.getElementById(id);if(e)e.textContent=t;};
+function rng(seed){let s=seed>>>0;return()=>{s=(s*1664525+1013904223)>>>0;return s/4294967296;};}
+function smoothNoise(n,w,seed){const r=rng(seed);const a=Array.from({length:n},()=>r()*2-1);const o=new Float32Array(n);
+  for(let i=0;i<n;i++){let s=0,c=0;for(let k=-w;k<=w;k++){const j=i+k;if(j>=0&&j<n){s+=a[j];c++;}}o[i]=s/c;}
+  let m=0;for(const v of o)m=Math.max(m,Math.abs(v));for(let i=0;i<n;i++)o[i]/=(m||1);return o;}
+function tok(){const s=getComputedStyle(document.documentElement);const g=n=>s.getPropertyValue(n).trim();
+  return {bg:g('--scope'),grid:g('--grid'),axis:g('--muted'),ink:g('--ink'),a:g('--wire-a'),b:g('--wire-b'),d:g('--diff'),gnd:g('--gnd'),
+    ok:g('--ok'),bad:g('--bad'),warn:g('--warn'),band:g('--band'),okband:g('--okband'),badband:g('--badband'),drive:g('--drive'),accent:g('--accent'),chip:g('--chip')};}
+const MONO='11px "IBM Plex Mono", ui-monospace, Consolas, monospace';
+function prep(cv){const w=Math.max(260,cv.clientWidth||cv.parentElement.clientWidth);const h=+cv.dataset.h||200;const dpr=window.devicePixelRatio||1;
+  cv.style.height=h+'px';cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr);const ctx=cv.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);return {ctx,w,h};}
+function frame(p,o){const t=tok();const {ctx,w,h}=p;const L=o.padL??52,R=o.padR??12,T=o.padT??24,B=o.padB??(o.xticks?22:10);
+  ctx.fillStyle=t.bg;ctx.fillRect(0,0,w,h);
+  const X=v=>L+(v-o.xmin)/(o.xmax-o.xmin)*(w-L-R);const Y=v=>T+(o.ymax-v)/(o.ymax-o.ymin)*(h-T-B);
+  ctx.font=MONO;ctx.textBaseline='middle';ctx.lineWidth=1;
+  for(const v of o.yticks||[]){const y=Math.round(Y(v))+.5;ctx.strokeStyle=t.grid;ctx.beginPath();ctx.moveTo(L,y);ctx.lineTo(w-R,y);ctx.stroke();
+    ctx.fillStyle=t.axis;ctx.textAlign='right';ctx.fillText((o.yfmt||String)(v),L-6,y);}
+  for(const v of o.xticks||[]){const x=Math.round(X(v))+.5;ctx.strokeStyle=t.grid;ctx.beginPath();ctx.moveTo(x,T);ctx.lineTo(x,h-B);ctx.stroke();
+    ctx.fillStyle=t.axis;ctx.textAlign=v===o.xmin?'left':(v===o.xmax?'right':'center');ctx.fillText((o.xfmt||String)(v),x,h-B+11);}
+  if(o.title){ctx.fillStyle=t.axis;ctx.textAlign='left';ctx.fillText(o.title,8,11);}
+  return {X,Y,L,R,T,B,w,h,t,ctx,ymin:o.ymin,ymax:o.ymax};}
+function clipPlot(f){f.ctx.save();f.ctx.beginPath();f.ctx.rect(f.L,f.T,f.w-f.L-f.R,f.h-f.T-f.B);f.ctx.clip();}
+function trace(f,arr,col,lw,xs){const c=f.ctx;clipPlot(f);c.strokeStyle=col;c.lineWidth=lw||1.6;c.lineJoin='round';c.beginPath();
+  for(let i=0;i<arr.length;i++){const x=f.X(xs?xs[i]:i),y=f.Y(arr[i]);i?c.lineTo(x,y):c.moveTo(x,y);}c.stroke();c.restore();}
+function band(f,lo,hi,col,x0,x1){const c=f.ctx;clipPlot(f);c.fillStyle=col;const a=x0==null?f.L:f.X(x0),b=x1==null?f.w-f.R:f.X(x1);const y1=f.Y(hi),y2=f.Y(lo);c.fillRect(a,y1,b-a,y2-y1);c.restore();}
+function hline(f,v,col,label,dash){const c=f.ctx;const y=Math.round(f.Y(v))+.5;c.save();c.strokeStyle=col;c.setLineDash(dash||[4,4]);c.beginPath();c.moveTo(f.L,y);c.lineTo(f.w-f.R,y);c.stroke();c.restore();
+  if(label){c.fillStyle=col;c.textAlign='left';c.font=MONO;c.fillText(label,f.L+4,y-7);}}
+function legend(f,items){const c=f.ctx;c.font=MONO;c.textAlign='right';c.textBaseline='middle';let x=f.w-f.R-2;
+  for(const [lab,col] of items.slice().reverse()){c.fillStyle=f.t.ink;c.fillText(lab,x,11);x-=c.measureText(lab).width+6;c.fillStyle=col;c.fillRect(x-14,10,14,3);x-=26;}}
+function seg(id,cb){const el=document.getElementById(id);const btns=[...el.querySelectorAll('button')];
+  btns.forEach(b=>b.addEventListener('click',()=>{btns.forEach(x=>x.setAttribute('aria-pressed',String(x===b)));cb&&cb();}));
+  return ()=>el.querySelector('[aria-pressed="true"]').dataset.v;}
+function fmtT(s){const a=Math.abs(s);if(a===0)return '0';if(a<1e-6)return +(s*1e9).toFixed(a<1e-8?1:0)+' ns';if(a<1e-3)return +(s*1e6).toFixed(a<1e-5?2:1)+' µs';return +(s*1e3).toFixed(2)+' ms';}
+const fmtV=v=>(v<0?'−':'')+Math.abs(v).toFixed(2)+' V';
+const fmtmV=v=>(v<0?'−':'')+Math.round(Math.abs(v*1000))+' mV';
+const hex=b=>b.toString(16).toUpperCase().padStart(2,'0');
+const draws=[];const reg=f=>{draws.push(f);};const redraw=()=>draws.forEach(f=>f());
+
+/* ---------- 1. differential ---------- */
+(function(){
+  const bits=[0,1,1,0,1,0,0,1,1,1,0,1,0,0,1,0],NB=bits.length,N=800;
+  const n1=smoothNoise(N,16,7),n2=smoothNoise(N,3,99);
+  const cm=$('#m1-cm'),dn=$('#m1-dn'),vd=$('#m1-vod');
+  function cells(id,arr,ref){document.getElementById(id).innerHTML=arr.map((b,k)=>`<span class="cell${ref&&b!==ref[k]?' err':''}">${b}</span>`).join('');}
+  function draw(){
+    const C=+cm.value,D=+dn.value,V=+vd.value;
+    setText('m1-cm-o',C.toFixed(1)+' V');setText('m1-dn-o',D.toFixed(2)+' V');setText('m1-vod-o',V.toFixed(2)+' V');
+    const A=new Float32Array(N),B=new Float32Array(N),Df=new Float32Array(N);
+    for(let i=0;i<N;i++){const s=bits[Math.min(NB-1,Math.floor(i/N*NB))]?1:-1,t=i/N;
+      const c=C*(0.65*Math.sin(2*Math.PI*2.3*t)+0.35*n1[i]),d=D*n2[i];
+      A[i]=2.5+c+s*V/2+d/2;B[i]=2.5+c-s*V/2-d/2;Df[i]=s*V+d;}
+    let f=frame(prep($('#m1-wires')),{xmin:0,xmax:N-1,ymin:-9,ymax:14,yticks:[-5,0,5,10],yfmt:v=>v+' V',title:'Each wire vs ground'});
+    hline(f,12,f.t.axis,'+12 V receiver limit');hline(f,-7,f.t.axis,'−7 V receiver limit');
+    hline(f,2.5,f.t.axis,null,[1,5]);
+    trace(f,A,f.t.a,1.6);trace(f,B,f.t.b,1.6);legend(f,[['A',f.t.a],['B',f.t.b]]);
+    f=frame(prep($('#m1-diff')),{xmin:0,xmax:N-1,ymin:-4,ymax:4,yticks:[-3,0,3],yfmt:v=>v+' V',title:'A − B at the receiver'});
+    band(f,-0.2,0.2,f.t.band);
+    for(let k=0;k<NB;k++){const x=f.X((k+.5)/NB*N);f.ctx.fillStyle=f.t.grid;f.ctx.fillRect(x,f.T,1,f.h-f.T-f.B);}
+    trace(f,Df,f.t.d,1.8);legend(f,[['A − B',f.t.d]]);
+    let st=1,e1=0,e2=0;const r1=[],r2=[];
+    for(let k=0;k<NB;k++){const c=Math.floor((k+.5)/NB*N);
+      for(let i=Math.floor(k/NB*N);i<=c;i++){if(Df[i]>0.2)st=1;else if(Df[i]<-0.2)st=0;}
+      r1.push(st);const se=A[c]>2.5?1:0;r2.push(se);if(st!==bits[k])e1++;if(se!==bits[k])e2++;}
+    cells('m1-sent',bits);cells('m1-rx',r1,bits);cells('m1-se',r2,bits);
+    const e=(id,n)=>{const el=document.getElementById(id);el.textContent=n+' / '+NB;el.className=n?'bad':'ok';};
+    e('m1-e1',e1);e('m1-e2',e2);
+  }
+  [cm,dn,vd].forEach(x=>x.addEventListener('input',draw));
+  document.querySelectorAll('#two-wires [data-p]').forEach(b=>b.addEventListener('click',()=>{const [a,c,d]=b.dataset.p.split(',');cm.value=a;dn.value=c;vd.value=d;draw();}));
+  reg(draw);
+})();
+
+/* ---------- 2. driver ---------- */
+const driverModel=(vcc,rl)=>{const voc=vcc-0.7,rs=34;const vod=rl?voc*rl/(rl+rs):voc;return {voc,vod,i:rl?vod/rl:0};};
+(function(){
+  const gBit=seg('m2-bit',draw),gV=seg('m2-vcc',draw),gL=seg('m2-load',draw);
+  const sw=(id,on)=>{const g=document.getElementById(id);g.classList.toggle('on',on);g.querySelector('.blade').style.transform=on?'rotate(0deg)':'rotate(-32deg)';};
+  function draw(){
+    const bit=gBit()==='1',vcc=+gV(),rl=+gL();const m=driverModel(vcc,rl);const s=bit?1:-1;
+    const A=vcc/2+s*m.vod/2,B=vcc/2-s*m.vod/2;
+    sw('q1',bit);sw('q4',bit);sw('q2',!bit);sw('q3',!bit);
+    const p=document.getElementById('ipath');
+    p.setAttribute('d',rl?(bit?'M150 32V150H410V268':'M410 32V150H150V268'):'');
+    setText('m2-va',A.toFixed(2)+' V');setText('m2-vb',B.toFixed(2)+' V');
+    setText('m2-loadlbl',rl?`load ${rl} Ω`+(rl===54?' (2×120 Ω + 32 UL)':rl===60?' (2×120 Ω)':''):'no load (open)');
+    setText('m2-a',fmtV(A));setText('m2-b',fmtV(B));setText('m2-d',(s>0?'+':'−')+m.vod.toFixed(2)+' V');setText('m2-i',rl?(m.i*1000).toFixed(1)+' mA':'0 mA');
+    const st=document.getElementById('m2-status');
+    if(!rl){st.className='status';st.textContent='Unloaded, the swing is close to the supply minus the transistor drops. Real buses are never this lightly loaded.';}
+    else{const ok=m.vod>=1.5;st.className='status '+(ok?'ok':'bad');
+      st.textContent=(ok?'Meets':'Fails')+` the 1.5 V minimum with ${(m.vod-1.5>=0?'+':'')}${(m.vod-1.5).toFixed(2)} V to spare. The receiver needs only 0.2 V, so ${Math.max(0,m.vod-0.2).toFixed(2)} V is left for cable loss and differential noise.`;}
+  }
+  reg(draw);
+})();
+
+/* ---------- 3. ground offset ---------- */
+(function(){
+  const sl=$('#m3-off');const gBit=seg('m3-bit',draw);
+  function draw(){
+    const off=+sl.value;setText('m3-off-o',(off>0?'+':off<0?'−':'')+Math.abs(off).toFixed(1)+' V');
+    const bit=gBit()==='1',s=bit?1:-1;const m=driverModel(5,60);
+    const A=2.5+s*m.vod/2,B=2.5-s*m.vod/2,Ar=A+off,Br=B+off;
+    const f=frame(prep($('#m3-cv')),{xmin:0,xmax:2,ymin:-22,ymax:32,yticks:[-20,-10,0,10,20,30],yfmt:v=>v+' V',padT:30});
+    const c=f.ctx;
+    band(f,-7,12,f.t.okband,1.06,1.98);band(f,12,40,f.t.badband,1.06,1.98);band(f,-40,-7,f.t.badband,1.06,1.98);
+    c.font=MONO;c.textAlign='left';c.fillStyle=f.t.axis;
+    c.fillText('At the sender (vs its GND)',f.X(0.04),12);c.fillText('At the receiver (vs its GND)',f.X(1.06),12);
+    c.fillStyle=f.t.ok;c.fillText('+12 V',f.X(1.08),f.Y(12)+9);c.fillText('−7 V',f.X(1.08),f.Y(-7)-9);
+    const segm=(x0,v,col,lab,side,dash)=>{const y=Math.round(f.Y(v))+.5;c.save();c.strokeStyle=col;c.lineWidth=2.5;if(dash)c.setLineDash(dash);c.beginPath();c.moveTo(f.X(x0+0.3),y);c.lineTo(f.X(x0+0.62),y);c.stroke();c.restore();
+      c.fillStyle=col;c.font=MONO;if(side==='l'){c.textAlign='right';c.fillText(lab,f.X(x0+0.27),y);}else{c.textAlign='left';c.fillText(lab,f.X(x0+0.65),y+(side==='u'?-7:side==='d'?7:0));}};
+    const up=A>B;
+    segm(0,0,f.t.gnd,'TX GND','l',[5,4]);segm(0,A,f.t.a,'A '+A.toFixed(2),up?'u':'d');segm(0,B,f.t.b,'B '+B.toFixed(2),up?'d':'u');
+    segm(1,0,f.t.gnd,'RX GND','l',[5,4]);segm(1,off,f.t.gnd,'TX GND','l',[2,3]);
+    segm(1,Ar,f.t.a,'A '+Ar.toFixed(2),up?'u':'d');segm(1,Br,f.t.b,'B '+Br.toFixed(2),up?'d':'u');
+    c.fillStyle=f.t.grid;c.fillRect(f.X(1)-0.5,f.T,1,f.h-f.T-f.B);
+    const d=A-B;setText('m3-ds',(d>0?'+':'−')+Math.abs(d).toFixed(2)+' V');setText('m3-dr',(d>0?'+':'−')+Math.abs(Ar-Br).toFixed(2)+' V');
+    const inR=Math.min(Ar,Br)>=-7&&Math.max(Ar,Br)<=12;
+    const rd=document.getElementById('m3-read');rd.textContent=inR?String(bit?1:0):'unreliable';rd.className=inR?'ok':'bad';
+    const st=document.getElementById('m3-status');
+    if(inR){st.className='status ok';st.textContent=`Both wires sit between −7 V and +12 V at the receiver. The ${Math.abs(off).toFixed(1)} V offset moved them together and cancelled in the subtraction.`;}
+    else{const hi=Math.max(Ar,Br)>12;const w=hi?(Ar>Br?'A':'B'):(Ar<Br?'A':'B');const v=hi?Math.max(Ar,Br):Math.min(Ar,Br);
+      st.className='status bad';st.textContent=`Wire ${w} is at ${fmtV(v)} relative to the receiver's ground, outside the ${hi?'+12 V':'−7 V'} limit. Input protection conducts, data corrupts, and a large enough offset damages the chip. Run a ground reference wire or use an isolated transceiver.`;}
+  }
+  sl.addEventListener('input',draw);reg(draw);
+})();
+
+/* ---------- 4. termination ---------- */
+(function(){
+  const Z0=120,RS=34,VOC=4.3,NSPM=5.0;const GS=(RS-Z0)/(RS+Z0),k0=Z0/(Z0+RS);
+  const sl=$('#m4-len');const gRL=seg('m4-rl',draw),gB=seg('m4-baud',draw),gT=seg('m4-tr',draw);
+  const lenOf=v=>Math.max(1,Math.round(Math.pow(10,v/1000*Math.log10(1200))));
+  function draw(){
+    const len=lenOf(+sl.value);setText('m4-len-o',len+' m');
+    const rlv=gRL(),RL=rlv==='inf'?Infinity:+rlv,baud=+gB(),tr=+gT();
+    const Td=len*NSPM*1e-9,Tb=1/baud;const GL=RL===Infinity?1:(RL-Z0)/(RL+Z0);const G=GL*GS;
+    const r=t=>t<=0?0:t>=tr?1:(u=>u*u*(3-2*u))(t/tr);
+    const far=t=>{let s=0;for(let n=0;;n++){const tn=(2*n+1)*Td;if(tn>t)break;const c=Math.pow(G,n);if(n>0&&Math.abs(c)<1e-6)break;s+=c*r(t-tn);}return k0*(1+GL)*s;};
+    const near=t=>{let s=r(t);for(let n=1;;n++){const tn=2*n*Td;if(tn>t)break;const c=Math.pow(GL,n)*Math.pow(GS,n-1);if(Math.abs(c)<1e-6)break;s+=(1+GS)*c*r(t-tn);}return k0*s;};
+    const K=k0*(1+GL)/(1-G);
+    // zoomed edge
+    const span=Math.max(14*Td,5*tr),t0=0.06*span,NZ=500;const xs=[],vf=[],vn=[];
+    for(let i=0;i<NZ;i++){const t=i/(NZ-1)*span;xs.push(t);vf.push(-VOC*K+2*VOC*far(t-t0));vn.push(-VOC*K+2*VOC*near(t-t0));}
+    let lo=Math.min(...vf,...vn,-0.3),hi=Math.max(...vf,...vn,0.3);const yr=Math.ceil(Math.max(Math.abs(lo),Math.abs(hi))+0.5);
+    let f=frame(prep($('#m4-edge')),{xmin:0,xmax:span,ymin:-yr,ymax:yr,yticks:[-yr+1,0,yr-1].filter((v,i,a)=>a.indexOf(v)===i),yfmt:v=>v+' V',xticks:[0,span/2,span],xfmt:fmtT,title:'One edge, zoomed'});
+    band(f,-0.2,0.2,f.t.band);
+    trace(f,vn,f.t.axis,1.2,xs);trace(f,vf,f.t.d,1.8,xs);legend(f,[['at driver',f.t.axis],['at far end',f.t.d]]);
+    // bit stream
+    const bits=[0,1,0,0,1,0,1,1],prev=1,NBb=bits.length;const span2=NBb*Tb+Td,NS=900;const edges=[];let lv=prev;
+    bits.forEach((b,k)=>{if(b!==lv){edges.push({t:k*Tb,s:b?1:-1});lv=b;}});
+    const v2=t=>{let v=(prev?1:-1)*VOC*K;for(const e of edges){if(t>e.t)v+=e.s*2*VOC*far(t-e.t);}return v;};
+    const xs2=[],ys2=[];for(let i=0;i<NS;i++){const t=i/(NS-1)*span2;xs2.push(t);ys2.push(v2(t));}
+    const yr2=Math.ceil(Math.max(...ys2.map(Math.abs),1)+0.5);
+    f=frame(prep($('#m4-stream')),{xmin:0,xmax:span2,ymin:-yr2,ymax:yr2,yticks:[-yr2+1,0,yr2-1].filter((v,i,a)=>a.indexOf(v)===i),yfmt:v=>v+' V',xticks:[0,span2],xfmt:fmtT,title:'Bit stream at the far end: 0 1 0 0 1 0 1 1'});
+    band(f,-0.2,0.2,f.t.band);trace(f,ys2,f.t.d,1.6,xs2);
+    let errs=0;const c=f.ctx;
+    bits.forEach((b,k)=>{const ts=(k+.5)*Tb+Td,v=v2(ts);const got=v>0.2?1:v<-0.2?0:-1;const ok=got===b;if(!ok)errs++;
+      const x=f.X(ts),y=f.Y(v);c.fillStyle=ok?f.t.ok:f.t.bad;c.beginPath();c.arc(x,y,4,0,7);c.fill();
+      c.font=MONO;c.textAlign='center';c.fillText(got<0?'?':String(got),x,f.T+8);});
+    // readouts
+    const settle=Math.abs(G)<0.02?Td+tr:(2*Math.ceil(Math.log(0.05)/Math.log(Math.abs(G)))+1)*Td+tr;
+    setText('m4-td',fmtT(Td));setText('m4-gl',(GL>=0?'+':'−')+Math.abs(GL).toFixed(2)+(GL===0?' (matched)':GL===1?' (open)':''));
+    setText('m4-settle',fmtT(settle));setText('m4-sample',fmtT(Tb/2+Td));
+    const st=document.getElementById('m4-status');const longLine=2*Td>tr;
+    if(errs){st.className='status bad';st.textContent=`${errs} of 8 bits misread. Reflections are still bouncing when the receiver samples, and they pile into the next bits. Terminate the far end with 120 Ω or slow down.`;}
+    else if(GL!==0&&settle>Tb/2+Td){st.className='status warn';st.textContent='Every bit reads correctly here, but the ringing hasn\'t fully died out at the sample point. There is little margin left for noise.';}
+    else if(GL!==0&&longLine){st.className='status warn';st.textContent='The line rings on every edge, but it settles long before the sample point, so data gets through. More length or speed will expose it.';}
+    else{st.className='status ok';st.textContent=GL===0?'Matched termination absorbs the edge at the far end. One clean step, no reflection.':'The cable is short compared with the edge time, so reflections blur into the edge itself. Termination barely matters here.';}
+  }
+  sl.addEventListener('input',draw);reg(draw);
+})();
+
+/* ---------- 5. bias ---------- */
+(function(){
+  const SPB=16,VD=2.4;
+  const plan=[{idle:12},{msg:[0x01,0x03,0x00,0x10]},{idle:36},{msg:[0x01,0x03,0x02]},{idle:12}];
+  const drv=[],lvl=[],starts=[];
+  for(const p of plan){if(p.idle){for(let i=0;i<p.idle*SPB;i++){drv.push(0);lvl.push(1);}}
+    else{for(const b of p.msg){starts.push({i:drv.length,b});const fr=[0];for(let k=0;k<8;k++)fr.push((b>>k)&1);fr.push(1);
+      for(const bit of fr)for(let i=0;i<SPB;i++){drv.push(1);lvl.push(bit);}}
+      for(let i=0;i<SPB;i++){drv.push(1);lvl.push(1);}}}
+  const N=drv.length;const nz=smoothNoise(N,5,21);
+  const on=$('#m5-on'),rs=$('#m5-r'),ns=$('#m5-n');const gV=seg('m5-vcc',draw),gT=seg('m5-term',draw),gR=seg('m5-rx',draw);
+  function uart(rx){const out=[];let i=1;while(i<rx.length){if(rx[i-1]===1&&rx[i]===0){const s=i,mid=s+SPB/2;if(mid>=rx.length)break;if(rx[mid]!==0){i++;continue;}
+      let b=0;for(let k=0;k<8;k++){const idx=mid+SPB*(k+1);if(idx<rx.length&&rx[idx])b|=1<<k;}
+      const si=mid+SPB*9;const ok=si<rx.length&&rx[si]===1;out.push({s,b,ok});i=Math.min(si,rx.length-1)+1;if(!ok)while(i<rx.length&&rx[i]===0)i++;}else i++;}return out;}
+  function draw(){
+    const vcc=+gV(),nt=+gT(),R=+rs.value,bias=on.checked,amp=+ns.value/1000,fs=gR()==='fs';
+    setText('m5-n-o',ns.value+' mV');rs.disabled=false;
+    const Rt=nt===2?60:nt===1?120:24000;
+    const idle=bias?vcc*Rt/(2*R+Rt):0;const I=bias?vcc/(2*R+Rt):0;
+    document.getElementById('m5-formula').textContent=bias?`Idle A − B = ${vcc} V × ${Rt>=1000?(Rt/1000)+' kΩ':Rt+' Ω'} / (2 × ${R>=1000?(R/1000)+' kΩ':R+' Ω'} + ${Rt>=1000?(Rt/1000)+' kΩ':Rt+' Ω'}) = ${fmtmV(idle)}`+(nt===0?'   (no terminators: only the receivers\' ~24 kΩ inputs load the bus)':''):'No bias fitted: with every driver off, nothing holds A apart from B, so the idle bus sits at about 0 V.';
+    const up=fs?-0.05:0.025,dn=fs?-0.15:-0.01;
+    const v=new Float32Array(N);let last=VD,rel=-1;
+    for(let i=0;i<N;i++){if(drv[i]){v[i]=lvl[i]?VD:-VD;last=v[i];rel=-1;}
+      else{if(rel<0)rel=i;const decay=Math.exp(-(i-rel)/(0.5*SPB));v[i]=idle+(last-idle)*decay+amp*nz[i];}}
+    const rx=new Uint8Array(N);let st=1;for(let i=0;i<N;i++){if(v[i]>up)st=1;else if(v[i]<dn)st=0;rx[i]=st;}
+    const dec=uart(Array.from(rx));
+    const real=d=>d.ok&&starts.some(s=>Math.abs(s.i-d.s)<=2&&s.b===d.b);
+    const garbage=dec.filter(d=>!real(d)).length;
+    // plot 1
+    let f=frame(prep($('#m5-diff')),{xmin:0,xmax:N-1,ymin:-0.6,ymax:0.6,yticks:[-0.4,-0.2,0,0.2,0.4],yfmt:v=>Math.round(v*1000)+' mV',padL:62,title:'A − B, zoomed (messages clip at ±2.4 V)'});
+    let i0=-1;for(let i=0;i<=N;i++){if(i<N&&drv[i]&&i0<0)i0=i;if((i===N||!drv[i])&&i0>=0){band(f,-1,1,f.t.drive,i0,i-1);i0=-1;}}
+    band(f,-0.2,0.2,f.t.band);
+    hline(f,up,f.t.ok,null,[3,3]);hline(f,dn,f.t.bad,null,[3,3]);
+    trace(f,v,f.t.d,1.4);
+    const c=f.ctx;c.font=MONO;c.textAlign='right';c.fillStyle=f.t.ok;c.fillText('RX → 1 above '+fmtmV(up),f.w-f.R-4,f.Y(up)-8);c.fillStyle=f.t.bad;c.fillText('RX → 0 below '+fmtmV(dn),f.w-f.R-4,f.Y(dn)+9);
+    legend(f,[['driver on',f.t.drive]]);
+    // plot 2
+    f=frame(prep($('#m5-rxc')),{xmin:0,xmax:N-1,ymin:-0.6,ymax:1.4,yticks:[0,1],yfmt:v=>'RX '+v,padL:62,title:'Receiver output and what the UART decodes'});
+    trace(f,Array.from(rx),f.t.ink,1.4);
+    const ctx=f.ctx;
+    for(const d of dec){const ok=real(d);const x0=f.X(d.s),x1=f.X(Math.min(N-1,d.s+SPB*10));const y=f.Y(-0.3);
+      ctx.fillStyle=ok?f.t.okband:f.t.badband;ctx.strokeStyle=ok?f.t.ok:f.t.bad;ctx.lineWidth=1;ctx.fillRect(x0,y-9,x1-x0,18);ctx.strokeRect(x0+.5,y-8.5,x1-x0-1,17);
+      ctx.fillStyle=ok?f.t.ok:f.t.bad;ctx.font=MONO;ctx.textAlign='center';if(x1-x0>22)ctx.fillText(d.ok?hex(d.b):'FE',(x0+x1)/2,y);}
+    setText('m5-idle',fmtmV(idle));
+    const mg=idle-0.2;const me=document.getElementById('m5-margin');me.textContent=bias?(mg>=0?'+':'−')+Math.round(Math.abs(mg)*1000)+' mV':'none';me.className=bias&&mg>=0.03?'ok':'bad';
+    setText('m5-i',bias?(I*1000).toFixed(2)+' mA':'0 mA');
+    const g=document.getElementById('m5-g');g.textContent=String(garbage);g.className=garbage?'bad':'ok';
+  }
+  [on,rs].forEach(x=>x.addEventListener('change',draw));ns.addEventListener('input',draw);reg(draw);
+})();
+
+/* ---------- 6. uart ---------- */
+(function(){
+  const inp=$('#m6-in'),er=$('#m6-e'),err=$('#m6-err');let shown=10,timer=null,byte=0x41;
+  const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function parse(){const s=inp.value.trim();if(!s)return null;if(/^0x[0-9a-f]{1,2}$/i.test(s))return parseInt(s,16);if(s.length===1){const c=s.charCodeAt(0);return c<256?c:null;}return null;}
+  function draw(){
+    const e=+er.value/100;setText('m6-e-o',(e>0?'+':e<0?'−':'')+Math.abs(e*100).toFixed(1)+' %');
+    const fr=[0];for(let k=0;k<8;k++)fr.push((byte>>k)&1);fr.push(1);
+    const cells=[1,...fr,1,1];const NC=cells.length;
+    const f=frame(prep($('#m6-cv')),{xmin:0,xmax:NC,ymin:-0.9,ymax:1.6,yticks:[0,1],yfmt:v=>v?'1':'0',padL:30,padT:34,title:'Line state (A − B > 0 is 1)'});
+    const c=f.ctx;const names=['idle','start','D0','D1','D2','D3','D4','D5','D6','D7','stop','idle','idle'];
+    for(let k=0;k<NC;k++){const x0=f.X(k),x1=f.X(k+1);c.fillStyle=k===1||k===10?f.t.chip:'transparent';if(k===1||k===10)c.fillRect(x0,f.T,x1-x0,f.h-f.T-f.B);
+      c.strokeStyle=f.t.grid;c.beginPath();c.moveTo(Math.round(x0)+.5,f.T);c.lineTo(Math.round(x0)+.5,f.h-f.B);c.stroke();
+      c.fillStyle=f.t.axis;c.font=MONO;c.textAlign='center';if(x1-x0>24||k%2===0)c.fillText(names[k],(x0+x1)/2,f.T-8);}
+    const xs=[],ys=[];for(let k=0;k<NC;k++){xs.push(k,k+1);ys.push(cells[k],cells[k]);}
+    trace(f,ys,f.t.d,2,xs);
+    const Trx=1/(1+e);const got=[];
+    for(let k=0;k<10;k++){const t=1+(k+.5)*Trx;const ci=Math.floor(t);const val=ci<NC?cells[ci]:1;got.push(val);
+      if(k>=shown)continue;const ok=ci===k+1;const x=f.X(t);c.strokeStyle=ok?f.t.ok:f.t.bad;c.lineWidth=1.5;c.beginPath();c.moveTo(x,f.Y(1.35));c.lineTo(x,f.Y(-0.35));c.stroke();
+      c.fillStyle=ok?f.t.ok:f.t.bad;c.beginPath();c.arc(x,f.Y(val),4.5,0,7);c.fill();c.font=MONO;c.textAlign='center';c.fillText(String(val),x,f.Y(-0.6));}
+    c.lineWidth=1;
+    const ch=byte>=32&&byte<127?` '${String.fromCharCode(byte)}'`:'';
+    setText('m6-sent','0x'+hex(byte)+ch);setText('m6-wire',fr.join(''));
+    let rb=0;for(let k=0;k<8;k++)if(got[k+1])rb|=1<<k;const startOk=got[0]===0,stopOk=got[9]===1;
+    const done=shown>=10;const gch=rb>=32&&rb<127?` '${String.fromCharCode(rb)}'`:'';
+    const ge=document.getElementById('m6-got');ge.textContent=done?'0x'+hex(rb)+gch:'sampling…';ge.className=done?(rb===byte&&stopOk?'ok':'bad'):'';
+    const st=document.getElementById('m6-status');
+    if(!done){st.className='status';st.textContent=`Sample ${shown} of 10. ${shown===0?'The receiver saw the falling edge of the start bit.':'Each sample lands near the middle of a bit.'}`;}
+    else if(!stopOk){st.className='status bad';st.textContent='Framing error: the receiver expected the stop bit to be 1. Its clock has drifted by a whole bit or more by the end of the frame.';}
+    else if(rb!==byte){st.className='status bad';st.textContent='Wrong byte, no framing error: late samples landed in the neighbouring bit. The receiver has no way to notice this one on its own; it takes a checksum to catch it.';}
+    else if(Math.abs(e)>=0.03){st.className='status warn';st.textContent=`Correct, but the last sample is ${Math.round(Math.abs(e)*950)} % of a bit away from the centre. Noise or slow edges would tip it over.`;}
+    else{st.className='status ok';st.textContent='Correct byte. Every sample landed close to the centre of its bit.';}
+  }
+  function play(){clearInterval(timer);if(reduce){shown=10;draw();return;}shown=0;draw();timer=setInterval(()=>{shown++;draw();if(shown>=10)clearInterval(timer);},380);}
+  inp.addEventListener('input',()=>{const b=parse();if(b==null){err.textContent=inp.value.trim()?'Use one character or a hex byte like 0x55.':'Enter a character first.';return;}err.textContent='';byte=b;clearInterval(timer);shown=10;draw();});
+  er.addEventListener('input',()=>{draw();});
+  $('#m6-play').addEventListener('click',()=>{if(parse()==null){err.textContent='Enter a character first.';return;}play();});
+  $('#m6-all').addEventListener('click',()=>{clearInterval(timer);shown=10;draw();});
+  reg(draw);
+})();
+
+/* ---------- 7. multidrop ---------- */
+(function(){
+  const crc=bytes=>{let c=0xFFFF;for(const b of bytes){c^=b;for(let i=0;i<8;i++)c=(c&1)?(c>>>1)^0xA001:c>>>1;}return [c&0xFF,c>>8];};
+  const gA=seg('m7-addr'),gF=seg('m7-fn');const early=$('#m7-early'),go=$('#m7-go');
+  const regs={1:0x00E1,2:0x0215,3:0x0D2A};
+  const nodes=[{id:'m',name:'Master',addr:null},{id:1,name:'Slave 1',addr:1},{id:2,name:'Slave 2',addr:2},{id:3,name:'Slave 3',addr:3}];
+  const wrap=document.getElementById('m7-nodes');
+  wrap.innerHTML=nodes.map(n=>`<div class="node" id="nd-${n.id}"><div class="node-h"><b>${n.name}</b><span class="tag" id="de-${n.id}">DE off</span></div>
+    ${n.addr?`<div class="cap">Address ${n.addr} · register 0x0010 = <span id="rv-${n.id}">0x${hex(regs[n.id]>>8)}${hex(regs[n.id]&255)}</span></div>`:'<div class="cap">Polls the slaves</div>'}
+    <div class="state" id="st-${n.id}">Listening</div><div class="log" id="lg-${n.id}"></div></div>`).join('');
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  const S=(id,t,cls)=>{const e=document.getElementById('st-'+id);e.textContent=t;e.className='state'+(cls?' '+cls:'');};
+  const DE=(id,on)=>{const e=document.getElementById('de-'+id);e.textContent=on?'DE on, driving':'DE off';e.className='tag'+(on?' on':'');document.getElementById('nd-'+id).classList.toggle('drive',on);};
+  const chip=(id,b,cls)=>{const e=document.createElement('span');e.className='lb'+(cls?' '+cls:'');e.textContent=typeof b==='number'?hex(b):b;document.getElementById('lg-'+id).appendChild(e);};
+  const mapFrame=(bytes,labels)=>{document.getElementById('m7-frame').innerHTML=bytes.map((b,i)=>`<span class="fb" id="fb-${i}">${hex(b)}<small>${labels[i]}</small></span>`).join('');};
+  const live=i=>{document.querySelectorAll('#m7-frame .fb').forEach((e,k)=>e.classList.toggle('live',k===i));};
+  let busy=false;
+  async function send(byteList,labels,from,listeners,corruptLast){
+    mapFrame(byteList,labels);DE(from,true);
+    for(let i=0;i<byteList.length;i++){live(i);const last=i===byteList.length-1;const bad=corruptLast&&last;
+      setText('m7-byte',bad?'??':hex(byteList[i]));setText('m7-busnote',bad?`Driver released mid-byte: the bias pulls the line to 1 and the rest of the bits are lost`:`${labels[i]} · driven by ${from==='m'?'master':'slave '+from}`);
+      for(const l of listeners)l(byteList[i],i,bad);await sleep(bad?900:420);}
+    live(-1);DE(from,false);setText('m7-byte','——');setText('m7-busnote','Silence… 3.5 character times marks the end of the frame');await sleep(1000);setText('m7-busnote','Bus idle, held at 1 by bias');}
+  async function run(){
+    if(busy)return;busy=true;go.textContent='Sending…';
+    nodes.forEach(n=>{document.getElementById('lg-'+n.id).innerHTML='';DE(n.id,false);S(n.id,'Listening');});
+    let addr=+gA(),fn=+gF();let note='';
+    if(addr===0&&fn===3){fn=6;note=' Modbus only allows broadcast for writes, so this was sent as 06.';}
+    const val=0x0100+Math.floor(Math.random()*0xEFF);
+    const body=fn===3?[addr,3,0x00,0x10,0x00,0x01]:[addr,6,0x00,0x10,val>>8,val&255];const req=[...body,...crc(body)];
+    const lab=fn===3?['address','function','reg hi','reg lo','count hi','count lo','CRC lo','CRC hi']:['address','function','reg hi','reg lo','value hi','value lo','CRC lo','CRC hi'];
+    S('m',`Sending ${fn===3?'read':'write'} to ${addr===0?'everyone (broadcast)':'slave '+addr}.${note}`);
+    const decided={};
+    const slaveListen=(isReply,replier)=>nodes.filter(n=>n.addr&&n.addr!==replier).map(n=>(b,i,bad)=>{
+      if(bad){chip(n.id,(b^0xB6)|0x80,'badb');return;}
+      if(i===0){decided[n.id]=(!isReply&&(b===n.addr||b===0));
+        if(i===0&&document.getElementById('lg-'+n.id).childElementCount)chip(n.id,'|','sep');
+        chip(n.id,b,'addr');S(n.id,decided[n.id]?(b===0?'Address 00 is broadcast: this frame is for me':'Address matches: this frame is for me'):`Address ${hex(b)} isn't mine: ignore the content, keep counting bytes until the frame ends`,decided[n.id]?'ok':'');}
+      else chip(n.id,b,decided[n.id]?'':'dim');});
+    await send(req,lab,'m',slaveListen(false,null),false);
+    S('m','Request sent, driver released. Waiting for a reply.');
+    const targets=nodes.filter(n=>n.addr&&(addr===0||n.addr===addr));
+    for(const t of targets){S(t.id,'Frame complete. CRC checks out, executing.','ok');}
+    nodes.filter(n=>n.addr&&!targets.includes(n)).forEach(n=>S(n.id,'Frame ended. Not mine, nothing to do.'));
+    await sleep(500);
+    if(fn===6){for(const t of targets){regs[t.id]=val;setText('rv-'+t.id,'0x'+hex(val>>8)+hex(val&255));}}
+    if(addr===0){targets.forEach(t=>S(t.id,`Wrote 0x${hex(val>>8)}${hex(val&255)}. Broadcasts get no reply, so nobody drives the bus.`,'ok'));S('m','Broadcast done. No reply expected, the master can\'t tell who received it.');}
+    else{
+      const t=targets[0];const rb=fn===3?[addr,3,2,regs[addr]>>8,regs[addr]&255]:body.slice();const rep=[...rb,...crc(rb)];
+      const rl=fn===3?['address','function','byte count','value hi','value lo','CRC lo','CRC hi']:['address','function','reg hi','reg lo','value hi','value lo','CRC lo','CRC hi'];
+      S(t.id,'Replying: driver on.','ok');
+      const got=[];
+      const master=(b,i,bad)=>{const v=bad?(b^0xB6)|0x80:b;got.push(v);if(i===0&&document.getElementById('lg-m').childElementCount)chip('m','|','sep');chip('m',v,bad?'badb':(i===0?'addr':''));};
+      await send(rep,rl,t.id,[master,...slaveListen(true,t.addr)],early.checked);
+      S(t.id,early.checked?'Released DE before the last byte finished sending.':'Reply sent, driver released.',early.checked?'bad':'ok');
+      const c=crc(got.slice(0,-2));const ok=c[0]===got[got.length-2]&&c[1]===got[got.length-1];
+      if(ok)S('m',fn===3?`CRC OK. Slave ${addr} register 0x0010 = 0x${hex(got[3])}${hex(got[4])} (${(got[3]<<8)|got[4]}).`:`CRC OK. Slave ${addr} confirmed the write by echoing the request.`,'ok');
+      else S('m',`CRC mismatch: computed ${hex(c[0])} ${hex(c[1])}, received ${hex(got[got.length-2])} ${hex(got[got.length-1])}. Reply discarded, the master will retry.`,'bad');
+    }
+    busy=false;go.textContent='Send request';
+  }
+  go.addEventListener('click',run);
+  mapFrame([2,3,0,0x10,0,1,...crc([2,3,0,0x10,0,1])],['address','function','reg hi','reg lo','count hi','count lo','CRC lo','CRC hi']);
+})();
+
+/* ---------- wiring ---------- */
+let lastW=0;
+const ro=new ResizeObserver(()=>{const w=document.querySelector('main').clientWidth;if(w!==lastW){lastW=w;redraw();}});
+ro.observe(document.querySelector('main'));
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',redraw);
+new MutationObserver(redraw).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(redraw);
+redraw();
+</script>
+
+</body>
+</html>
