@@ -417,11 +417,13 @@ footer{border-top:1px solid var(--line);padding-top:24px;color:var(--muted);font
       </div>
       <div class="keyrow"><span><i style="background:var(--f-start)"></i>start bit, always 0</span><span><i style="background:var(--diff)"></i>8 data bits, least significant first</span><span><i style="background:var(--f-stop)"></i>stop bit, always 1</span></div>
       <canvas class="scope" id="m6-cv" data-h="240" aria-label="Frame of one byte on the line with receiver sample points"></canvas>
+      <p class="cap" id="m6-order"></p>
       <div class="readouts">
         <div class="ro"><span>Sent</span><b id="m6-sent"></b></div>
         <div class="ro"><span>One bit lasts</span><b id="m6-tb"></b></div>
         <div class="ro"><span>Whole frame (10 bits)</span><b id="m6-tf"></b></div>
-        <div class="ro"><span>Bits on the wire</span><b id="m6-wire"></b></div>
+        <div class="ro"><span>Binary, MSB first</span><b id="m6-bin"></b></div>
+        <div class="ro"><span>On the wire, first → last</span><b id="m6-wire"></b></div>
         <div class="ro"><span>Received</span><b id="m6-got"></b></div>
       </div>
       <div class="status" id="m6-status"></div>
@@ -801,7 +803,9 @@ const driverModel=(vcc,rl)=>{const voc=vcc-0.7,rs=34;const vod=rl?voc*rl/(rl+rs)
       c.fillStyle=ok?f.t.ok:f.t.bad;c.beginPath();c.arc(x,f.Y(val),4.5,0,7);c.fill();c.font=MONO;c.textAlign='center';c.fillText(String(val),x,f.Y(-0.6));}
     c.lineWidth=1;
     const ch=byte>=32&&byte<127?` '${String.fromCharCode(byte)}'`:'';
-    setText('m6-sent','0x'+hex(byte)+ch);setText('m6-wire',fr.join(''));
+    setText('m6-sent','0x'+hex(byte)+ch);const bin=byte.toString(2).padStart(8,'0');setText('m6-bin',bin.slice(0,4)+' '+bin.slice(4));
+    setText('m6-wire',`${fr[0]} · ${fr.slice(1,5).join('')} ${fr.slice(5,9).join('')} · ${fr[9]}`);
+    setText('m6-order',`0x${hex(byte)} is ${bin.slice(0,4)} ${bin.slice(4)} in binary, written most significant bit first. The UART sends the least significant bit (D0) first, so between the start and stop bits the data appears mirrored: ${fr.slice(1,9).join('')}.`);
     let rb=0;for(let k=0;k<8;k++)if(got[k+1])rb|=1<<k;const startOk=got[0]===0,stopOk=got[9]===1;
     const done=shown>=10;const gch=rb>=32&&rb<127?` '${String.fromCharCode(rb)}'`:'';
     const ge=document.getElementById('m6-got');ge.textContent=done?'0x'+hex(rb)+gch:'sampling…';ge.className=done?(rb===byte&&stopOk?'ok':'bad'):'';
@@ -973,7 +977,7 @@ const driverModel=(vcc,rl)=>{const voc=vcc-0.7,rs=34;const vod=rl?voc*rl/(rl+rs)
     const desc=what[by.n]||'Register contents, high byte first.';
     const dataBits=cells.filter(x=>x.k==='data').map(x=>x.v).join('');
     const par=S.fmt==='8E1'?` Parity bit ${cells.find(x=>x.k==='par').v}: the data has ${ones} one${ones===1?'':'s'}, and even parity makes the total even.`:'';
-    document.getElementById('m8-desc').textContent=`${desc} On the wire from ${fmtT(by.t0)} to ${fmtT(by.t1)}: start 0, data ${dataBits} (D0 first), ${S.fmt==='8E1'?'parity, ':''}${S.fmt==='8N2'?'two stop bits':'stop 1'}.${par}`;}
+    document.getElementById('m8-desc').textContent=`${desc} On the wire from ${fmtT(by.t0)} to ${fmtT(by.t1)}: start 0, data ${dataBits} (D0 first, so ${by.b.toString(2).padStart(8,'0')} appears mirrored), ${S.fmt==='8E1'?'parity, ':''}${S.fmt==='8N2'?'two stop bits':'stop 1'}.${par}`;}
   function readouts(){const T=S.T;setText('m8-tc',`${fmtT(T.Tc)} (${T.nb} bits)`);setText('m8-treq',fmtT(S.fr.req.length*T.Tc));
     setText('m8-t15',fmtT(T.t15)+(T.b>19200?' (fixed)':''));setText('m8-t35',fmtT(T.t35)+(T.b>19200?' (fixed)':''));setText('m8-total',fmtT(T.total));setText('m8-tps',String(Math.floor(1/T.total)));}
   function draw(){setText('m8-resp-o',(+inS.value).toFixed(1)+' ms');const p=read();if(typeof p==='string'){err.textContent=p;return;}err.textContent='';
