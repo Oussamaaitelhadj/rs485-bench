@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="Seven interactive experiments on RS485: differential signaling, the H-bridge driver, ground offset, termination, bias, UART framing and multi-drop addressing.">
+<meta name="description" content="Eight interactive experiments on RS485: differential signaling, the H-bridge driver, ground offset, termination, bias, UART framing, multi-drop addressing and the anatomy of a Modbus RTU transaction.">
 <style>body{margin:0}</style>
 <title>RS485 Bench</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -18,6 +18,7 @@
   --ok:#1f7f46; --bad:#c22f2f; --warn:#a86d12;
   --band:rgba(200,140,30,.17); --okband:rgba(31,127,70,.09); --badband:rgba(194,47,47,.07); --drive:rgba(31,108,196,.07);
   --accent:#0d7480; --accent-ink:#ffffff;
+  --f-start:#b4307a; --f-stop:#16806a; --f-par:#9a6510; --f-addr:#0d7480; --f-func:#7643c4; --f-data:#6b7a82; --f-crc:#a5442b;
   --f-display:"Archivo","Helvetica Neue",Arial,sans-serif;
   --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --f-mono:"IBM Plex Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
@@ -28,14 +29,16 @@
   --wire-a:#ff8150; --wire-b:#5ea8ff; --diff:#b690ff; --gnd:#8a99a1;
   --ok:#4fc47d; --bad:#ff6d6d; --warn:#e3a640;
   --band:rgba(227,166,64,.16); --okband:rgba(79,196,125,.09); --badband:rgba(255,109,109,.08); --drive:rgba(94,168,255,.08);
-  --accent:#3eb4bd; --accent-ink:#06191b; color-scheme:dark}}
+  --accent:#3eb4bd; --accent-ink:#06191b;
+  --f-start:#f07ab8; --f-stop:#45c9a6; --f-par:#e3a640; --f-addr:#3eb4bd; --f-func:#b690ff; --f-data:#93a3ab; --f-crc:#f08a6a; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0e1418; --surface:#141c21; --ink:#e3ebee; --muted:#93a3ab; --line:#26333a; --chip:#1c272d;
   --scope:#0b1115; --grid:#1b262c;
   --wire-a:#ff8150; --wire-b:#5ea8ff; --diff:#b690ff; --gnd:#8a99a1;
   --ok:#4fc47d; --bad:#ff6d6d; --warn:#e3a640;
   --band:rgba(227,166,64,.16); --okband:rgba(79,196,125,.09); --badband:rgba(255,109,109,.08); --drive:rgba(94,168,255,.08);
-  --accent:#3eb4bd; --accent-ink:#06191b; color-scheme:dark}
+  --accent:#3eb4bd; --accent-ink:#06191b;
+  --f-start:#f07ab8; --f-stop:#45c9a6; --f-par:#e3a640; --f-addr:#3eb4bd; --f-func:#b690ff; --f-data:#93a3ab; --f-crc:#f08a6a; color-scheme:dark}
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.6;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 64px}
@@ -140,6 +143,30 @@ svg.sch{width:100%;height:auto;display:block}
 .lb.badb{background:var(--badband);color:var(--bad)}
 .lb.sep{background:transparent;color:var(--muted)}
 .err-msg{color:var(--bad);font-size:13px;min-height:1.2em}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.baudbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:9;background:var(--bg);display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding-block:10px;border-bottom:1px solid var(--line)}
+.baudbar .bb-l{font-family:var(--f-display);font-weight:700;font-size:14px}
+section{scroll-margin-top:72px}
+input[type=number]{font:inherit;font-size:14px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%}
+.sub{font-family:var(--f-mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:6px 0 -4px}
+.layers{display:grid;gap:8px}
+.layer{display:grid;grid-template-columns:130px minmax(0,1fr);gap:10px;align-items:center}
+.lyr{font-family:var(--f-display);font-weight:700;font-size:14px;line-height:1.2}
+.lyr small{display:block;font-family:var(--f-body);font-weight:400;color:var(--muted);font-size:11px}
+.fields{display:flex;flex-wrap:wrap;gap:4px}
+.fld{display:grid;text-align:center;min-width:60px;border:1px solid;border-radius:4px;padding:3px 6px;font-family:var(--f-mono)}
+.fld b{font-weight:500;font-size:14px}.fld small{font-size:10px;color:var(--muted);font-family:var(--f-body)}
+.f-addr{border-color:var(--f-addr);background:color-mix(in srgb,var(--f-addr) 12%,var(--surface))}
+.f-func{border-color:var(--f-func);background:color-mix(in srgb,var(--f-func) 12%,var(--surface))}
+.f-data{border-color:var(--f-data);background:color-mix(in srgb,var(--f-data) 10%,var(--surface))}
+.f-crc{border-color:var(--f-crc);background:color-mix(in srgb,var(--f-crc) 12%,var(--surface))}
+.crc{display:flex;flex-wrap:wrap;gap:4px;font-family:var(--f-mono);font-size:12px}
+.crcs{background:var(--chip);border-radius:4px;padding:2px 7px;color:var(--muted)}
+.crcs b{color:var(--ink);font-weight:500}
+.crcs.fin{border:1px solid var(--f-crc)}
+.keyrow{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted);font-family:var(--f-mono)}
+.keyrow i{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-2px;margin-right:5px}
+@media (max-width:520px){.layer{grid-template-columns:minmax(0,1fr)}}
 footer{border-top:1px solid var(--line);padding-top:24px;color:var(--muted);font-size:14px}
 @media (max-width:520px){.bits{grid-template-columns:minmax(0,1fr)} .cell{font-size:10px}}
 </style>
@@ -150,7 +177,7 @@ footer{border-top:1px solid var(--line);padding-top:24px;color:var(--muted);font
   <header class="hero">
     <div class="eyebrow">Interactive bench · TIA/EIA-485</div>
     <h1>RS485 Bench</h1>
-    <p class="lede">Seven experiments that build RS485 up from the wire: why two wires beat one, what the driver does, why ground offset is tolerated, why cables need termination, what bias is for, how a UART frames a byte, and how many devices share one pair.</p>
+    <p class="lede">Eight experiments that build RS485 up from the wire: why two wires beat one, what the driver does, why ground offset is tolerated, why cables need termination, what bias is for, how a UART frames a byte, how many devices share one pair, and how a complete Modbus transaction is built and timed.</p>
     <div class="legend" aria-label="Trace colors">
       <span><i style="background:var(--wire-a)"></i>Wire A</span>
       <span><i style="background:var(--wire-b)"></i>Wire B</span>
@@ -165,8 +192,15 @@ footer{border-top:1px solid var(--line);padding-top:24px;color:var(--muted);font
       <li><a href="#bias"><b>5</b>Bias and the idle bus</a></li>
       <li><a href="#uart"><b>6</b>Framing a byte</a></li>
       <li><a href="#multidrop"><b>7</b>Many devices, one pair</a></li>
+      <li><a href="#frame"><b>8</b>Anatomy of a transaction</a></li>
     </ul>
   </header>
+
+  <div class="baudbar" role="group" aria-label="Baud rate used by every experiment">
+    <span class="bb-l">Baud rate</span>
+    <div class="seg" id="g-baud"><button data-v="9600" aria-pressed="true">9600</button><button data-v="19200" aria-pressed="false">19200</button><button data-v="38400" aria-pressed="false">38400</button><button data-v="115200" aria-pressed="false">115200</button><button data-v="1000000" aria-pressed="false">1M</button><button data-v="10000000" aria-pressed="false">10M</button></div>
+    <span class="cap" id="g-bit"></span>
+  </div>
 
   <!-- 1 -->
   <section id="two-wires">
@@ -194,7 +228,8 @@ footer{border-top:1px solid var(--line);padding-top:24px;color:var(--muted);font
         <div class="ctrl"><label for="m1-vod">Signal swing |A − B| <output id="m1-vod-o"></output></label><input type="range" id="m1-vod" min="0.1" max="3" step="0.05" value="2.3"></div>
       </div>
       <canvas class="scope" id="m1-wires" data-h="200" aria-label="Wire A and B voltages against ground"></canvas>
-      <canvas class="scope" id="m1-diff" data-h="160" aria-label="Differential voltage A minus B"></canvas>
+      <canvas class="scope" id="m1-diff" data-h="175" aria-label="Differential voltage A minus B"></canvas>
+      <p class="cap" id="m1-cap"></p>
       <div class="bits">
         <span class="lbl">Sent</span><div class="cells" id="m1-sent"></div>
         <span class="lbl">Differential RX</span><div class="cells" id="m1-rx"></div>
@@ -258,6 +293,8 @@ footer{border-top:1px solid var(--line);padding-top:24px;color:var(--muted);font
           <p class="cap">Simplified model: each driver leg drops about 0.35 V and has about 17 Ω of output resistance.</p>
         </div>
       </div>
+      <canvas class="scope" id="m2-time" data-h="180" aria-label="Wire A and B over time while sending one byte"></canvas>
+      <p class="cap" id="m2-cap"></p>
     </div>
   </section>
 
@@ -279,6 +316,7 @@ footer{border-top:1px solid var(--line);padding-top:24px;color:var(--muted);font
         <div class="ctrl"><span class="lbl">Bit</span><div class="seg" id="m3-bit"><button data-v="1" aria-pressed="true">1</button><button data-v="0" aria-pressed="false">0</button></div></div>
       </div>
       <canvas class="scope" id="m3-cv" data-h="360" aria-label="Wire voltages seen from the sender and from the receiver"></canvas>
+      <canvas class="scope" id="m3-time" data-h="180" aria-label="Wire voltages at the receiver over time while sending one byte"></canvas>
       <div class="readouts">
         <div class="ro"><span>A − B at sender</span><b id="m3-ds"></b></div>
         <div class="ro"><span>A − B at receiver</span><b id="m3-dr"></b></div>
@@ -298,15 +336,14 @@ footer{border-top:1px solid var(--line);padding-top:24px;color:var(--muted);font
     </div>
     <div class="try"><h3>Try this</h3><ul>
       <li>Open far end, 100 m, fast edges: look at the overshoot and ringing in the zoomed edge.</li>
-      <li>Keep it open but drop to 9600 baud. The ringing is still there, it just ends long before the sample point.</li>
-      <li>Go to 1 Mbps with 300 m unterminated, then add 120 Ω.</li>
+      <li>At 9600 baud (set at the top) the ringing is still there, it just ends long before the sample point.</li>
+      <li>Set the baud rate to 1M with 300 m unterminated, then add 120 Ω.</li>
       <li>Try slew-limited edges on an open line: slow edges barely ring on short cables.</li>
     </ul></div>
     <div class="lab">
       <div class="ctrls">
         <div class="ctrl"><label for="m4-len">Cable length <output id="m4-len-o"></output></label><input type="range" id="m4-len" min="0" max="1000" step="1" value="650"></div>
         <div class="ctrl"><span class="lbl">Far-end termination</span><div class="seg" id="m4-rl"><button data-v="inf" aria-pressed="true">Open</button><button data-v="120" aria-pressed="false">120 Ω</button><button data-v="60" aria-pressed="false">60 Ω</button><button data-v="330" aria-pressed="false">330 Ω</button></div></div>
-        <div class="ctrl"><span class="lbl">Baud rate</span><div class="seg" id="m4-baud"><button data-v="9600" aria-pressed="false">9600</button><button data-v="115200" aria-pressed="false">115k</button><button data-v="1000000" aria-pressed="true">1M</button><button data-v="10000000" aria-pressed="false">10M</button></div></div>
         <div class="ctrl"><span class="lbl">Driver edges</span><div class="seg" id="m4-tr"><button data-v="10e-9" aria-pressed="true">Fast, 10 ns</button><button data-v="500e-9" aria-pressed="false">Slew-limited, 0.5 µs</button></div></div>
       </div>
       <canvas class="scope" id="m4-edge" data-h="200" aria-label="One edge at the driver and at the far end"></canvas>
@@ -352,6 +389,7 @@ footer{border-top:1px solid var(--line);padding-top:24px;color:var(--muted);font
         <div class="ro"><span>Idle A − B</span><b id="m5-idle"></b></div>
         <div class="ro"><span>Margin vs 200 mV</span><b id="m5-margin"></b></div>
         <div class="ro"><span>Bias current</span><b id="m5-i"></b></div>
+        <div class="ro"><span>Idle gap between messages</span><b id="m5-gap"></b></div>
         <div class="ro"><span>Garbage bytes</span><b id="m5-g"></b></div>
       </div>
     </div>
@@ -366,7 +404,9 @@ footer{border-top:1px solid var(--line);padding-top:24px;color:var(--muted);font
       <p>There is no clock wire, so both sides must agree on the baud rate. A small clock error is absorbed because the receiver re-synchronizes on every start bit, but the error builds up over the 10 bits of the frame.</p>
     </div>
     <div class="try"><h3>Try this</h3><ul>
+      <li>Look at the shaded bits: the start bit is always 0 and the stop bit is always 1. Every byte therefore begins with a falling edge, whatever its data.</li>
       <li>Type a character and press <i>Sample</i> to watch the receiver take its samples one by one.</li>
+      <li>Change the baud rate at the top. The frame shape stays the same and only the time scale changes.</li>
       <li>Slide the receiver clock error to ±4 %, then ±6 %. The last samples drift into the wrong bit.</li>
     </ul></div>
     <div class="lab">
@@ -375,9 +415,12 @@ footer{border-top:1px solid var(--line);padding-top:24px;color:var(--muted);font
         <div class="ctrl"><label for="m6-e">Receiver clock error <output id="m6-e-o"></output></label><input type="range" id="m6-e" min="-10" max="10" step="0.5" value="0"></div>
         <div class="ctrl"><span class="lbl">&nbsp;</span><div class="row"><button class="btn" id="m6-play">Sample</button><button class="btn ghost" id="m6-all">Show all</button></div></div>
       </div>
-      <canvas class="scope" id="m6-cv" data-h="190" aria-label="Frame of one byte on the line with receiver sample points"></canvas>
+      <div class="keyrow"><span><i style="background:var(--f-start)"></i>start bit, always 0</span><span><i style="background:var(--diff)"></i>8 data bits, least significant first</span><span><i style="background:var(--f-stop)"></i>stop bit, always 1</span></div>
+      <canvas class="scope" id="m6-cv" data-h="240" aria-label="Frame of one byte on the line with receiver sample points"></canvas>
       <div class="readouts">
         <div class="ro"><span>Sent</span><b id="m6-sent"></b></div>
+        <div class="ro"><span>One bit lasts</span><b id="m6-tb"></b></div>
+        <div class="ro"><span>Whole frame (10 bits)</span><b id="m6-tf"></b></div>
         <div class="ro"><span>Bits on the wire</span><b id="m6-wire"></b></div>
         <div class="ro"><span>Received</span><b id="m6-got"></b></div>
       </div>
@@ -408,7 +451,66 @@ footer{border-top:1px solid var(--line);padding-top:24px;color:var(--muted);font
         <div class="bus-line"><span class="cap">On the wire</span><span class="bus-byte" id="m7-byte">——</span><span id="m7-busnote" class="cap">Bus idle, held at 1 by bias</span></div>
         <div class="frame-map" id="m7-frame"></div>
       </div>
+      <div class="readouts">
+        <div class="ro"><span>One byte on the wire</span><b id="m7-tc"></b></div>
+        <div class="ro"><span>Request (8 bytes)</span><b id="m7-treq"></b></div>
+        <div class="ro"><span>End-of-frame silence</span><b id="m7-t35"></b></div>
+        <div class="ro"><span>Animation slowed down</span><b id="m7-slow"></b></div>
+      </div>
       <div class="nodes" id="m7-nodes"></div>
+    </div>
+  </section>
+
+  <!-- 8 -->
+  <section id="frame">
+    <div class="eyebrow">Experiment 8</div>
+    <h2>Anatomy of a Modbus RTU transaction</h2>
+    <div class="prose">
+      <p>A request starts in the master's firmware as an intent, such as "read register 0x0010 from slave 2", and ends as a few milliseconds of voltage on the pair. This experiment follows one request through every layer: the bytes the firmware builds, the CRC that protects them, the UART character around each byte, and the timing rules that tell receivers where a frame starts and ends.</p>
+      <p>Modbus RTU has no start or end markers in the data. Frames are separated by silence alone: bytes inside a frame must follow each other with gaps under <b>1.5 characters</b>, and a frame ends after <b>3.5 characters</b> of silence. Above 19200 baud the standard fixes these at 750 µs and 1.75 ms.</p>
+    </div>
+    <div class="try"><h3>Try this</h3><ul>
+      <li>Press <i>Play</i> to step through the transaction, or click any byte in the timeline to see its bits.</li>
+      <li>Switch the character format to 8E1, the Modbus default. Every character grows to 11 bits because of the parity bit.</li>
+      <li>Change one digit of the register. The CRC changes completely.</li>
+      <li>Set 115200 or 1M at the top. The bytes shrink, but the 1.75 ms silence and the slave's processing time don't, so they end up dominating the transaction.</li>
+    </ul></div>
+    <div class="lab">
+      <div class="ctrls">
+        <div class="ctrl"><label for="m8-addr">Slave address (0 = broadcast)</label><input type="number" id="m8-addr" min="0" max="247" step="1" value="2"></div>
+        <div class="ctrl"><span class="lbl">Function</span><div class="seg" id="m8-fn"><button data-v="3" aria-pressed="true">03 read registers</button><button data-v="6" aria-pressed="false">06 write register</button></div></div>
+        <div class="ctrl"><label for="m8-reg">Register address</label><input type="text" id="m8-reg" value="0x0010" maxlength="6" autocomplete="off" spellcheck="false"></div>
+        <div class="ctrl"><label for="m8-val" id="m8-val-l">Registers to read (1–4)</label><input type="number" id="m8-val" min="0" max="65535" step="1" value="1"></div>
+        <div class="ctrl"><span class="lbl">Character format</span><div class="seg" id="m8-fmt"><button data-v="8N1" aria-pressed="true">8N1</button><button data-v="8E1" aria-pressed="false">8E1</button><button data-v="8N2" aria-pressed="false">8N2</button></div></div>
+        <div class="ctrl"><label for="m8-resp">Slave processing time <output id="m8-resp-o"></output></label><input type="range" id="m8-resp" min="0.5" max="20" step="0.5" value="4"></div>
+      </div>
+      <span class="err-msg" id="m8-err"></span>
+
+      <div class="sub">1 · Bytes the firmware builds</div>
+      <div class="layers" id="m8-layers"></div>
+      <div class="keyrow"><span><i style="background:var(--f-addr)"></i>address</span><span><i style="background:var(--f-func)"></i>function</span><span><i style="background:var(--f-data)"></i>data</span><span><i style="background:var(--f-crc)"></i>CRC</span></div>
+
+      <div class="sub">2 · CRC-16 of the request, byte by byte</div>
+      <div class="crc" id="m8-crc"></div>
+      <p class="cap">The CRC register starts at FFFF, each byte is mixed in, and the result goes on the wire low byte first. The receiver repeats the calculation and drops the frame on any mismatch.</p>
+
+      <div class="sub">3 · The whole transaction on the wire</div>
+      <div class="row"><button class="btn" id="m8-play">Play</button><button class="btn ghost" id="m8-prev" aria-label="Previous byte">◀ Byte</button><button class="btn ghost" id="m8-next" aria-label="Next byte">Byte ▶</button></div>
+      <canvas class="scope" id="m8-tl" data-h="260" aria-label="Timeline of the request, silence, slave processing and reply, with driver enable signals" style="cursor:pointer"></canvas>
+      <div class="status" id="m8-stage" aria-live="polite"></div>
+
+      <div class="sub">4 · The selected character, bit by bit</div>
+      <canvas class="scope" id="m8-bits" data-h="230" aria-label="Bits of the selected character"></canvas>
+      <div class="status" id="m8-desc"></div>
+
+      <div class="readouts" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))">
+        <div class="ro"><span>One character</span><b id="m8-tc"></b></div>
+        <div class="ro"><span>Request on the wire</span><b id="m8-treq"></b></div>
+        <div class="ro"><span>Max gap inside a frame</span><b id="m8-t15"></b></div>
+        <div class="ro"><span>End-of-frame silence</span><b id="m8-t35"></b></div>
+        <div class="ro"><span>Whole transaction</span><b id="m8-total"></b></div>
+        <div class="ro"><span>Transactions per second</span><b id="m8-tps"></b></div>
+      </div>
     </div>
   </section>
 
@@ -426,7 +528,8 @@ function smoothNoise(n,w,seed){const r=rng(seed);const a=Array.from({length:n},(
   let m=0;for(const v of o)m=Math.max(m,Math.abs(v));for(let i=0;i<n;i++)o[i]/=(m||1);return o;}
 function tok(){const s=getComputedStyle(document.documentElement);const g=n=>s.getPropertyValue(n).trim();
   return {bg:g('--scope'),grid:g('--grid'),axis:g('--muted'),ink:g('--ink'),a:g('--wire-a'),b:g('--wire-b'),d:g('--diff'),gnd:g('--gnd'),
-    ok:g('--ok'),bad:g('--bad'),warn:g('--warn'),band:g('--band'),okband:g('--okband'),badband:g('--badband'),drive:g('--drive'),accent:g('--accent'),chip:g('--chip')};}
+    ok:g('--ok'),bad:g('--bad'),warn:g('--warn'),band:g('--band'),okband:g('--okband'),badband:g('--badband'),drive:g('--drive'),accent:g('--accent'),chip:g('--chip'),
+    fstart:g('--f-start'),fstop:g('--f-stop'),fpar:g('--f-par'),faddr:g('--f-addr'),ffunc:g('--f-func'),fdata:g('--f-data'),fcrc:g('--f-crc')};}
 const MONO='11px "IBM Plex Mono", ui-monospace, Consolas, monospace';
 function prep(cv){const w=Math.max(260,cv.clientWidth||cv.parentElement.clientWidth);const h=+cv.dataset.h||200;const dpr=window.devicePixelRatio||1;
   cv.style.height=h+'px';cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr);const ctx=cv.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);return {ctx,w,h};}
@@ -455,7 +558,35 @@ function fmtT(s){const a=Math.abs(s);if(a===0)return '0';if(a<1e-6)return +(s*1e
 const fmtV=v=>(v<0?'−':'')+Math.abs(v).toFixed(2)+' V';
 const fmtmV=v=>(v<0?'−':'')+Math.round(Math.abs(v*1000))+' mV';
 const hex=b=>b.toString(16).toUpperCase().padStart(2,'0');
+const hex4=v=>v.toString(16).toUpperCase().padStart(4,'0');
 const draws=[];const reg=f=>{draws.push(f);};const redraw=()=>draws.forEach(f=>f());
+
+/* ---------- shared: baud rate and character framing ---------- */
+const gBaud=seg('g-baud',()=>{updBaud();redraw();});
+const BAUD=()=>+gBaud();
+const T35=(b,nb)=>b>19200?1.75e-3:3.5*nb/b, T15=(b,nb)=>b>19200?0.75e-3:1.5*nb/b;
+function updBaud(){const b=BAUD();setText('g-bit',`1 bit = ${fmtT(1/b)} · 1 byte as 10 bits (8N1) = ${fmtT(10/b)} · at most ${Math.round(b/10).toLocaleString('en-US')} bytes/s`);document.dispatchEvent(new Event('baud'));}
+function charFrame(byte,fmt){const c=[{v:1,k:'idle',n:'idle'},{v:0,k:'start',n:'start'}];let ones=0;
+  for(let i=0;i<8;i++){const v=(byte>>i)&1;ones+=v;c.push({v,k:'data',n:'D'+i});}
+  if(fmt==='8E1')c.push({v:ones%2,k:'par',n:'P'});
+  c.push({v:1,k:'stop',n:'stop'});if(fmt==='8N2')c.push({v:1,k:'stop',n:'stop'});
+  c.push({v:1,k:'idle',n:'idle'});return c;}
+function drawCells(f,cells){
+  const t=f.t,c=f.ctx,col={start:t.fstart,stop:t.fstop,par:t.fpar};c.font=MONO;c.textBaseline='middle';const cw=f.X(1)-f.X(0);
+  cells.forEach((cl,k)=>{const x0=f.X(k),x1=f.X(k+1);
+    if(col[cl.k]){c.save();c.globalAlpha=.15;c.fillStyle=col[cl.k];c.fillRect(x0,f.T,x1-x0,f.h-f.T-f.B);c.restore();}
+    c.strokeStyle=t.grid;c.lineWidth=1;c.beginPath();c.moveTo(Math.round(x0)+.5,f.T);c.lineTo(Math.round(x0)+.5,f.h-f.B);c.stroke();
+    const lab=cw<34&&cl.k!=='data'?cl.n[0].toUpperCase():cl.n;
+    if(cl.k!=='idle'||cw>=30){c.fillStyle=col[cl.k]||t.axis;c.textAlign='center';c.fillText(lab,(x0+x1)/2,f.T-9);}});
+  const groups=[];cells.forEach((cl,k)=>{const g=groups[groups.length-1];if(g&&g.k===cl.k&&cl.k!=='idle')g.e=k+1;else groups.push({k:cl.k,s:k,e:k+1});});
+  const names={start:'START',data:'DATA · LSB FIRST',par:'PARITY',stop:'STOP'};
+  for(const g of groups){if(!names[g.k])continue;const x0=f.X(g.s)+3,x1=f.X(g.e)-3;let lab=names[g.k];if(g.k==='data'&&c.measureText(lab).width>x1-x0)lab='DATA';
+    c.strokeStyle=col[g.k]||t.d;c.lineWidth=1.5;c.beginPath();c.moveTo(x0,f.T-18);c.lineTo(x0,f.T-23);c.lineTo(x1,f.T-23);c.lineTo(x1,f.T-18);c.stroke();
+    if(c.measureText(lab).width<x1-x0+24){c.fillStyle=col[g.k]||t.ink;c.textAlign='center';c.fillText(lab,(x0+x1)/2,f.T-33);}}
+  c.lineCap='round';
+  cells.forEach((cl,k)=>{const y=f.Y(cl.v);if(k>0&&cells[k-1].v!==cl.v){c.strokeStyle=t.d;c.lineWidth=2;c.beginPath();c.moveTo(f.X(k),f.Y(cells[k-1].v));c.lineTo(f.X(k),y);c.stroke();}
+    c.strokeStyle=col[cl.k]||t.d;c.lineWidth=cl.k==='start'||cl.k==='stop'||cl.k==='par'?3.2:2.2;c.beginPath();c.moveTo(f.X(k),y);c.lineTo(f.X(k+1),y);c.stroke();});
+  c.lineWidth=1;c.lineCap='butt';}
 
 /* ---------- 1. differential ---------- */
 (function(){
@@ -470,11 +601,13 @@ const draws=[];const reg=f=>{draws.push(f);};const redraw=()=>draws.forEach(f=>f
     for(let i=0;i<N;i++){const s=bits[Math.min(NB-1,Math.floor(i/N*NB))]?1:-1,t=i/N;
       const c=C*(0.65*Math.sin(2*Math.PI*2.3*t)+0.35*n1[i]),d=D*n2[i];
       A[i]=2.5+c+s*V/2+d/2;B[i]=2.5+c-s*V/2-d/2;Df[i]=s*V+d;}
-    let f=frame(prep($('#m1-wires')),{xmin:0,xmax:N-1,ymin:-9,ymax:14,yticks:[-5,0,5,10],yfmt:v=>v+' V',title:'Each wire vs ground'});
+    const Tb=1/BAUD(),xt=[0,4,8,12,16].map(k=>k/16*(N-1)),xf=v=>fmtT(v/(N-1)*16*Tb);
+    setText('m1-cap',`16 bits at ${BAUD()} baud take ${fmtT(16*Tb)}: each bit lasts ${fmtT(Tb)}. The receiver decides at the middle of each bit (faint vertical lines).`);
+    let f=frame(prep($('#m1-wires')),{xmin:0,xmax:N-1,ymin:-9,ymax:14,yticks:[-5,0,5,10],yfmt:v=>v+' V',title:'Each wire vs ground',xticks:xt,xfmt:xf});
     hline(f,12,f.t.axis,'+12 V receiver limit');hline(f,-7,f.t.axis,'−7 V receiver limit');
     hline(f,2.5,f.t.axis,null,[1,5]);
     trace(f,A,f.t.a,1.6);trace(f,B,f.t.b,1.6);legend(f,[['A',f.t.a],['B',f.t.b]]);
-    f=frame(prep($('#m1-diff')),{xmin:0,xmax:N-1,ymin:-4,ymax:4,yticks:[-3,0,3],yfmt:v=>v+' V',title:'A − B at the receiver'});
+    f=frame(prep($('#m1-diff')),{xmin:0,xmax:N-1,ymin:-4,ymax:4,yticks:[-3,0,3],yfmt:v=>v+' V',title:'A − B at the receiver',xticks:xt,xfmt:xf});
     band(f,-0.2,0.2,f.t.band);
     for(let k=0;k<NB;k++){const x=f.X((k+.5)/NB*N);f.ctx.fillStyle=f.t.grid;f.ctx.fillRect(x,f.T,1,f.h-f.T-f.B);}
     trace(f,Df,f.t.d,1.8);legend(f,[['A − B',f.t.d]]);
@@ -509,7 +642,14 @@ const driverModel=(vcc,rl)=>{const voc=vcc-0.7,rs=34;const vod=rl?voc*rl/(rl+rs)
     if(!rl){st.className='status';st.textContent='Unloaded, the swing is close to the supply minus the transistor drops. Real buses are never this lightly loaded.';}
     else{const ok=m.vod>=1.5;st.className='status '+(ok?'ok':'bad');
       st.textContent=(ok?'Meets':'Fails')+` the 1.5 V minimum with ${(m.vod-1.5>=0?'+':'')}${(m.vod-1.5).toFixed(2)} V to spare. The receiver needs only 0.2 V, so ${Math.max(0,m.vod-0.2).toFixed(2)} V is left for cable loss and differential noise.`;}
+    const Tb=1/BAUD(),cells=charFrame(0x55,'8N1'),NC=cells.length,xs=[],ya=[],yb=[];
+    cells.forEach((cl,k)=>{const q=cl.v?1:-1,a=vcc/2+q*m.vod/2,b=vcc/2-q*m.vod/2;xs.push(k,k+1);ya.push(a,a);yb.push(b,b);});
+    const f=frame(prep($('#m2-time')),{xmin:0,xmax:NC,ymin:-0.4,ymax:vcc+0.4,yticks:[0,vcc],yfmt:v=>v+' V',xticks:[1,6,11],xfmt:v=>fmtT((v-1)*Tb),title:`Sending 0x55 'U' at ${BAUD()} baud`});
+    cells.forEach((cl,k)=>{if(cl.k==='start'||cl.k==='stop')band(f,-1,vcc+1,cl.k==='start'?f.t.badband:f.t.okband,k,k+1);});
+    trace(f,ya,f.t.a,2,xs);trace(f,yb,f.t.b,2,xs);legend(f,[['A',f.t.a],['B',f.t.b]]);
+    setText('m2-cap',`The switches flip at most once per bit, every ${fmtT(Tb)}. Shaded: the start bit (A low, B high) and the stop bit (A high, B low). The byte takes ${fmtT(10*Tb)} in total.`);
   }
+  document.addEventListener('baud',draw);
   reg(draw);
 })();
 
@@ -540,6 +680,10 @@ const driverModel=(vcc,rl)=>{const voc=vcc-0.7,rs=34;const vod=rl?voc*rl/(rl+rs)
     if(inR){st.className='status ok';st.textContent=`Both wires sit between −7 V and +12 V at the receiver. The ${Math.abs(off).toFixed(1)} V offset moved them together and cancelled in the subtraction.`;}
     else{const hi=Math.max(Ar,Br)>12;const w=hi?(Ar>Br?'A':'B'):(Ar<Br?'A':'B');const v=hi?Math.max(Ar,Br):Math.min(Ar,Br);
       st.className='status bad';st.textContent=`Wire ${w} is at ${fmtV(v)} relative to the receiver's ground, outside the ${hi?'+12 V':'−7 V'} limit. Input protection conducts, data corrupts, and a large enough offset damages the chip. Run a ground reference wire or use an isolated transceiver.`;}
+    const Tb=1/BAUD(),cells=charFrame(0x55,'8N1'),NC=cells.length,xs=[],ya=[],yb=[];
+    cells.forEach((cl,k)=>{const q=cl.v?1:-1,a=2.5+q*m.vod/2+off,b=2.5-q*m.vod/2+off;xs.push(k,k+1);ya.push(a,a);yb.push(b,b);});
+    const g=frame(prep($('#m3-time')),{xmin:0,xmax:NC,ymin:Math.min(-9,off-2),ymax:Math.max(14,off+6),yticks:[-7,0,12],yfmt:v=>v+' V',xticks:[1,6,11],xfmt:v=>fmtT((v-1)*Tb),title:`At the receiver over time: 0x55 at ${BAUD()} baud`});
+    band(g,-7,12,g.t.okband);trace(g,ya,g.t.a,2,xs);trace(g,yb,g.t.b,2,xs);legend(g,[['A',g.t.a],['B',g.t.b]]);
   }
   sl.addEventListener('input',draw);reg(draw);
 })();
@@ -547,11 +691,11 @@ const driverModel=(vcc,rl)=>{const voc=vcc-0.7,rs=34;const vod=rl?voc*rl/(rl+rs)
 /* ---------- 4. termination ---------- */
 (function(){
   const Z0=120,RS=34,VOC=4.3,NSPM=5.0;const GS=(RS-Z0)/(RS+Z0),k0=Z0/(Z0+RS);
-  const sl=$('#m4-len');const gRL=seg('m4-rl',draw),gB=seg('m4-baud',draw),gT=seg('m4-tr',draw);
+  const sl=$('#m4-len');const gRL=seg('m4-rl',draw),gT=seg('m4-tr',draw);
   const lenOf=v=>Math.max(1,Math.round(Math.pow(10,v/1000*Math.log10(1200))));
   function draw(){
     const len=lenOf(+sl.value);setText('m4-len-o',len+' m');
-    const rlv=gRL(),RL=rlv==='inf'?Infinity:+rlv,baud=+gB(),tr=+gT();
+    const rlv=gRL(),RL=rlv==='inf'?Infinity:+rlv,baud=BAUD(),tr=+gT();
     const Td=len*NSPM*1e-9,Tb=1/baud;const GL=RL===Infinity?1:(RL-Z0)/(RL+Z0);const G=GL*GS;
     const r=t=>t<=0?0:t>=tr?1:(u=>u*u*(3-2*u))(t/tr);
     const far=t=>{let s=0;for(let n=0;;n++){const tn=(2*n+1)*Td;if(tn>t)break;const c=Math.pow(G,n);if(n>0&&Math.abs(c)<1e-6)break;s+=c*r(t-tn);}return k0*(1+GL)*s;};
@@ -618,7 +762,7 @@ const driverModel=(vcc,rl)=>{const voc=vcc-0.7,rs=34;const vod=rl?voc*rl/(rl+rs)
     const real=d=>d.ok&&starts.some(s=>Math.abs(s.i-d.s)<=2&&s.b===d.b);
     const garbage=dec.filter(d=>!real(d)).length;
     // plot 1
-    let f=frame(prep($('#m5-diff')),{xmin:0,xmax:N-1,ymin:-0.6,ymax:0.6,yticks:[-0.4,-0.2,0,0.2,0.4],yfmt:v=>Math.round(v*1000)+' mV',padL:62,title:'A − B, zoomed (messages clip at ±2.4 V)'});
+    let f=frame(prep($('#m5-diff')),{xmin:0,xmax:N-1,ymin:-0.6,ymax:0.6,yticks:[-0.4,-0.2,0,0.2,0.4],yfmt:v=>Math.round(v*1000)+' mV',padL:62,title:'A − B, zoomed (messages clip at ±2.4 V)',xticks:[0,Math.round((N-1)/2),N-1],xfmt:i=>fmtT(i/SPB/BAUD())});
     let i0=-1;for(let i=0;i<=N;i++){if(i<N&&drv[i]&&i0<0)i0=i;if((i===N||!drv[i])&&i0>=0){band(f,-1,1,f.t.drive,i0,i-1);i0=-1;}}
     band(f,-0.2,0.2,f.t.band);
     hline(f,up,f.t.ok,null,[3,3]);hline(f,dn,f.t.bad,null,[3,3]);
@@ -634,7 +778,7 @@ const driverModel=(vcc,rl)=>{const voc=vcc-0.7,rs=34;const vod=rl?voc*rl/(rl+rs)
       ctx.fillStyle=ok?f.t.ok:f.t.bad;ctx.font=MONO;ctx.textAlign='center';if(x1-x0>22)ctx.fillText(d.ok?hex(d.b):'FE',(x0+x1)/2,y);}
     setText('m5-idle',fmtmV(idle));
     const mg=idle-0.2;const me=document.getElementById('m5-margin');me.textContent=bias?(mg>=0?'+':'−')+Math.round(Math.abs(mg)*1000)+' mV':'none';me.className=bias&&mg>=0.03?'ok':'bad';
-    setText('m5-i',bias?(I*1000).toFixed(2)+' mA':'0 mA');
+    setText('m5-i',bias?(I*1000).toFixed(2)+' mA':'0 mA');setText('m5-gap',fmtT(36/BAUD())+' (36 bits)');
     const g=document.getElementById('m5-g');g.textContent=String(garbage);g.className=garbage?'bad':'ok';
   }
   [on,rs].forEach(x=>x.addEventListener('change',draw));ns.addEventListener('input',draw);reg(draw);
@@ -647,17 +791,12 @@ const driverModel=(vcc,rl)=>{const voc=vcc-0.7,rs=34;const vod=rl?voc*rl/(rl+rs)
   function parse(){const s=inp.value.trim();if(!s)return null;if(/^0x[0-9a-f]{1,2}$/i.test(s))return parseInt(s,16);if(s.length===1){const c=s.charCodeAt(0);return c<256?c:null;}return null;}
   function draw(){
     const e=+er.value/100;setText('m6-e-o',(e>0?'+':e<0?'−':'')+Math.abs(e*100).toFixed(1)+' %');
-    const fr=[0];for(let k=0;k<8;k++)fr.push((byte>>k)&1);fr.push(1);
-    const cells=[1,...fr,1,1];const NC=cells.length;
-    const f=frame(prep($('#m6-cv')),{xmin:0,xmax:NC,ymin:-0.9,ymax:1.6,yticks:[0,1],yfmt:v=>v?'1':'0',padL:30,padT:34,title:'Line state (A − B > 0 is 1)'});
-    const c=f.ctx;const names=['idle','start','D0','D1','D2','D3','D4','D5','D6','D7','stop','idle','idle'];
-    for(let k=0;k<NC;k++){const x0=f.X(k),x1=f.X(k+1);c.fillStyle=k===1||k===10?f.t.chip:'transparent';if(k===1||k===10)c.fillRect(x0,f.T,x1-x0,f.h-f.T-f.B);
-      c.strokeStyle=f.t.grid;c.beginPath();c.moveTo(Math.round(x0)+.5,f.T);c.lineTo(Math.round(x0)+.5,f.h-f.B);c.stroke();
-      c.fillStyle=f.t.axis;c.font=MONO;c.textAlign='center';if(x1-x0>24||k%2===0)c.fillText(names[k],(x0+x1)/2,f.T-8);}
-    const xs=[],ys=[];for(let k=0;k<NC;k++){xs.push(k,k+1);ys.push(cells[k],cells[k]);}
-    trace(f,ys,f.t.d,2,xs);
+    const Tb=1/BAUD();const cells=charFrame(byte,'8N1');const NC=cells.length;const fr=cells.slice(1,11).map(x=>x.v);
+    setText('m6-tb',fmtT(Tb));setText('m6-tf',fmtT(10*Tb));
+    const f=frame(prep($('#m6-cv')),{xmin:0,xmax:NC,ymin:-0.9,ymax:1.5,yticks:[0,1],yfmt:v=>v?'1':'0',padL:30,padT:62,xticks:[1,6,11],xfmt:v=>v===1?'0':fmtT((v-1)*Tb),title:`Line state (A − B > 0 is 1) at ${BAUD()} baud`});
+    drawCells(f,cells);const c=f.ctx;
     const Trx=1/(1+e);const got=[];
-    for(let k=0;k<10;k++){const t=1+(k+.5)*Trx;const ci=Math.floor(t);const val=ci<NC?cells[ci]:1;got.push(val);
+    for(let k=0;k<10;k++){const t=1+(k+.5)*Trx;const ci=Math.floor(t);const val=ci<NC?cells[ci].v:1;got.push(val);
       if(k>=shown)continue;const ok=ci===k+1;const x=f.X(t);c.strokeStyle=ok?f.t.ok:f.t.bad;c.lineWidth=1.5;c.beginPath();c.moveTo(x,f.Y(1.35));c.lineTo(x,f.Y(-0.35));c.stroke();
       c.fillStyle=ok?f.t.ok:f.t.bad;c.beginPath();c.arc(x,f.Y(val),4.5,0,7);c.fill();c.font=MONO;c.textAlign='center';c.fillText(String(val),x,f.Y(-0.6));}
     c.lineWidth=1;
@@ -703,7 +842,7 @@ const driverModel=(vcc,rl)=>{const voc=vcc-0.7,rs=34;const vod=rl?voc*rl/(rl+rs)
     for(let i=0;i<byteList.length;i++){live(i);const last=i===byteList.length-1;const bad=corruptLast&&last;
       setText('m7-byte',bad?'??':hex(byteList[i]));setText('m7-busnote',bad?`Driver released mid-byte: the bias pulls the line to 1 and the rest of the bits are lost`:`${labels[i]} · driven by ${from==='m'?'master':'slave '+from}`);
       for(const l of listeners)l(byteList[i],i,bad);await sleep(bad?900:420);}
-    live(-1);DE(from,false);setText('m7-byte','——');setText('m7-busnote','Silence… 3.5 character times marks the end of the frame');await sleep(1000);setText('m7-busnote','Bus idle, held at 1 by bias');}
+    live(-1);DE(from,false);setText('m7-byte','——');setText('m7-busnote',`Silence: 3.5 characters (${fmtT(T35(BAUD(),10))} at ${BAUD()} baud) marks the end of the frame`);await sleep(1000);setText('m7-busnote','Bus idle, held at 1 by bias');}
   async function run(){
     if(busy)return;busy=true;go.textContent='Sending…';
     nodes.forEach(n=>{document.getElementById('lg-'+n.id).innerHTML='';DE(n.id,false);S(n.id,'Listening');});
@@ -743,10 +882,122 @@ const driverModel=(vcc,rl)=>{const voc=vcc-0.7,rs=34;const vod=rl?voc*rl/(rl+rs)
     busy=false;go.textContent='Send request';
   }
   go.addEventListener('click',run);
+  const updT=()=>{const b=BAUD(),Tc=10/b;setText('m7-tc',fmtT(Tc));setText('m7-treq',fmtT(8*Tc));setText('m7-t35',fmtT(T35(b,10))+(b>19200?' (fixed)':''));setText('m7-slow',Math.round(0.42/Tc).toLocaleString('en-US')+'×');};
+  document.addEventListener('baud',updT);
   mapFrame([2,3,0,0x10,0,1,...crc([2,3,0,0x10,0,1])],['address','function','reg hi','reg lo','count hi','count lo','CRC lo','CRC hi']);
 })();
 
+/* ---------- 8. frame anatomy ---------- */
+(function(){
+  const crcStep=(c,b)=>{c^=b;for(let i=0;i<8;i++)c=(c&1)?(c>>>1)^0xA001:c>>>1;return c;};
+  const inA=$('#m8-addr'),inR=$('#m8-reg'),inV=$('#m8-val'),inS=$('#m8-resp'),err=$('#m8-err');
+  const gF=seg('m8-fn',()=>{inV.value=gF()==='3'?'1':'1234';setText('m8-val-l',gF()==='3'?'Registers to read (1–4)':'Value to write (0–65535)');draw();});
+  const gP=seg('m8-fmt',()=>draw());
+  const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let sel=0,rects=[],cursor=null,anim=null,S=null;
+  const REGV=r=>(r*0x2F1+0x0215)&0xFFFF;
+  function read(){
+    const a=Number(inA.value);if(inA.value===''||!Number.isInteger(a)||a<0||a>247)return 'Slave address must be a whole number from 0 to 247.';
+    const rs=inR.value.trim().replace(/^0x/i,'');if(!/^[0-9a-f]{1,4}$/i.test(rs))return 'Register must be a hex number from 0x0000 to 0xFFFF.';
+    const fn=+gF(),v=Number(inV.value);
+    if(fn===3&&(inV.value===''||!Number.isInteger(v)||v<1||v>4))return 'Read between 1 and 4 registers.';
+    if(fn===6&&(inV.value===''||!Number.isInteger(v)||v<0||v>65535))return 'The value to write must be a whole number from 0 to 65535.';
+    if(a===0&&fn===3)return 'Modbus only allows broadcast (address 0) for writes. Choose 06 or another address.';
+    return {addr:a,fn,reg:parseInt(rs,16),val:v,resp:+inS.value/1000};}
+  function addCrc(arr){let c=0xFFFF;for(const x of arr){c=crcStep(c,x.b);x.crc=c;}arr.push({b:c&255,f:'crc',n:'CRC lo'},{b:c>>8,f:'crc',n:'CRC hi'});}
+  function build(p){
+    const req=[{b:p.addr,f:'addr',n:'address'},{b:p.fn,f:'func',n:'function'},{b:p.reg>>8,f:'data',n:'register hi'},{b:p.reg&255,f:'data',n:'register lo'}];
+    if(p.fn===3)req.push({b:0,f:'data',n:'count hi'},{b:p.val,f:'data',n:'count lo'});else req.push({b:p.val>>8,f:'data',n:'value hi'},{b:p.val&255,f:'data',n:'value lo'});
+    addCrc(req);let rep=null;
+    if(p.addr!==0){if(p.fn===3){rep=[{b:p.addr,f:'addr',n:'address'},{b:3,f:'func',n:'function'},{b:2*p.val,f:'data',n:'byte count'}];
+        for(let i=0;i<p.val;i++){const r=(p.reg+i)&0xFFFF,v=REGV(r);rep.push({b:v>>8,f:'data',n:`reg ${hex4(r)} hi`},{b:v&255,f:'data',n:`reg ${hex4(r)} lo`});}}
+      else rep=req.slice(0,6).map(x=>({b:x.b,f:x.f,n:x.n}));addCrc(rep);}
+    return {req,rep};}
+  function timing(fr,p,fmt){const b=BAUD(),Tb=1/b,nb=fmt==='8N1'?10:11,Tc=nb*Tb,t35=T35(b,nb),t15=T15(b,nb);
+    const bytes=[];let t=Tb;fr.req.forEach((x,i)=>{bytes.push({...x,dir:'req',i,len:fr.req.length,t0:t,t1:t+Tc});t+=Tc;});
+    const reqEnd=t,detect=reqEnd+t35;let sDE=null,repEnd=null,total;
+    if(fr.rep){sDE=detect+p.resp;t=sDE+Tb;fr.rep.forEach((x,i)=>{bytes.push({...x,dir:'rep',i,len:fr.rep.length,t0:t,t1:t+Tc});t+=Tc;});repEnd=t;total=repEnd+t35;}
+    else total=detect+p.resp;
+    return {b,Tb,nb,Tc,t35,t15,bytes,reqEnd,detect,sDE,repEnd,total};}
+  const chips=arr=>arr.map(x=>`<span class="fld f-${x.f}"><b>${hex(x.b)}</b><small>${x.n}</small></span>`).join('');
+  function layers(){const {p,fr}=S;
+    const who=p.addr===0?'every slave (broadcast)':'slave '+p.addr;
+    const intent=p.fn===3?`Read ${p.val} register${p.val>1?'s':''} starting at 0x${hex4(p.reg)} from ${who}`:`Write ${p.val} (0x${hex4(p.val)}) to register 0x${hex4(p.reg)} on ${who}`;
+    document.getElementById('m8-layers').innerHTML=
+      `<div class="layer"><span class="lyr">Intent<small>in the master's code</small></span><div>${intent}</div></div>`+
+      `<div class="layer"><span class="lyr">PDU<small>function + data</small></span><div class="fields">${chips(fr.req.slice(1,-2))}</div></div>`+
+      `<div class="layer"><span class="lyr">Request ADU<small>address + PDU + CRC</small></span><div class="fields">${chips(fr.req)}</div></div>`+
+      (fr.rep?`<div class="layer"><span class="lyr">Reply ADU<small>from slave ${p.addr}</small></span><div class="fields">${chips(fr.rep)}</div></div>`:
+        `<div class="layer"><span class="lyr">Reply<small>none</small></span><div>Broadcasts are never answered.</div></div>`);
+    const body=fr.req.slice(0,-2),lo=fr.req[fr.req.length-2].b,hi=fr.req[fr.req.length-1].b;
+    document.getElementById('m8-crc').innerHTML=`<span class="crcs">start <b>FFFF</b></span>`+body.map(x=>`<span class="crcs">+ ${hex(x.b)} → <b>${hex4(x.crc)}</b></span>`).join('')+`<span class="crcs fin">sent as <b>${hex(lo)}</b> then <b>${hex(hi)}</b></span>`;}
+  function stage(t){const T=S.T,p=S.p;
+    if(t<T.Tb)return 'Master turns its driver on (DE high) and holds the line at 1 for about one bit so every receiver sees a clean idle.';
+    const by=T.bytes.find(b=>t>=b.t0&&t<b.t1);
+    if(by)return `${by.dir==='req'?'Master':'Slave '+p.addr} UART shifts out byte ${by.i+1} of ${by.len}: 0x${hex(by.b)} (${by.n}). The firmware keeps the transmit buffer full so the next byte follows at once; a gap over ${fmtT(T.t15)} would split the frame.`;
+    if(t<T.detect)return `Master's last stop bit has left (the UART's transmission-complete flag), so it releases DE. Every slave times the silence: after ${fmtT(T.t35)} (3.5 characters) the frame is complete.`;
+    if(T.sDE==null)return 'Broadcast: every slave checks the CRC and performs the write. Nobody replies, so the master waits a turnaround delay before the next request.';
+    if(t<T.sDE)return `Slave ${p.addr} checks the CRC, ${p.fn===3?'reads the register':'writes the register'} and builds its reply. The master listens, with a response timeout running.`;
+    if(t<T.repEnd)return `Slave ${p.addr} turns its driver on (DE high) and holds idle for about one bit.`;
+    return `Slave ${p.addr} releases DE after its last stop bit. After ${fmtT(T.t35)} of silence the master checks the reply's CRC and the transaction is complete.`;}
+  function drawTL(){const T=S.T;
+    const f=frame(prep($('#m8-tl')),{xmin:0,xmax:T.total,ymin:0,ymax:4.8,padL:86,padT:24,xticks:[0,T.total/2,T.total],xfmt:fmtT,title:`Whole transaction at ${T.b} baud, ${S.fmt} (click a byte)`});
+    const c=f.ctx,t=f.t,L={line:4.25,bytes:3.15,mde:1.6,sde:0.6};
+    c.font=MONO;c.textAlign='left';c.fillStyle=t.axis;[['A − B','line'],['Bytes','bytes'],['Master DE','mde'],['Slave DE','sde']].forEach(([l,k])=>c.fillText(l,8,f.Y(L[k])));
+    const hiY=f.Y(L.line+0.35),loY=f.Y(L.line-0.35);clipPlot(f);
+    c.strokeStyle=t.d;c.lineWidth=1.3;c.beginPath();c.moveTo(f.X(0),hiY);
+    for(const by of T.bytes){let tt=by.t0;c.lineTo(f.X(tt),hiY);for(const cl of charFrame(by.b,S.fmt).slice(1,-1)){const y=cl.v?hiY:loY;c.lineTo(f.X(tt),y);tt+=T.Tb;c.lineTo(f.X(tt),y);}}
+    c.lineTo(f.X(T.total),hiY);c.stroke();c.restore();
+    rects=[];const fc={addr:t.faddr,func:t.ffunc,data:t.fdata,crc:t.fcrc};
+    T.bytes.forEach((by,k)=>{const x0=f.X(by.t0),x1=Math.max(f.X(by.t1),x0+1.5),y0=f.Y(L.bytes+0.38),y1=f.Y(L.bytes-0.38);
+      c.save();c.globalAlpha=.25;c.fillStyle=fc[by.f];c.fillRect(x0,y0,x1-x0,y1-y0);c.restore();
+      c.strokeStyle=k===sel?t.ink:fc[by.f];c.lineWidth=k===sel?2:1;c.strokeRect(x0+.5,y0+.5,Math.max(1,x1-x0-1),y1-y0-1);
+      if(x1-x0>22){c.fillStyle=t.ink;c.textAlign='center';c.fillText(hex(by.b),(x0+x1)/2,(y0+y1)/2);}
+      rects.push({x0,x1,y0,y1,k});});
+    const de=(lane,a,b2)=>{const y0=f.Y(L[lane]+0.28),y1=f.Y(L[lane]-0.28);c.strokeStyle=t.accent;c.lineWidth=1.6;c.beginPath();c.moveTo(f.X(0),y1);
+      if(a!=null){c.lineTo(f.X(a),y1);c.lineTo(f.X(a),y0);c.lineTo(f.X(b2),y0);c.lineTo(f.X(b2),y1);c.save();c.globalAlpha=.14;c.fillStyle=t.accent;c.fillRect(f.X(a),y0,f.X(b2)-f.X(a),y1-y0);c.restore();}
+      c.lineTo(f.X(T.total),y1);c.stroke();};
+    de('mde',0,T.reqEnd);de('sde',T.sDE,T.repEnd);
+    const br=(a,b2,label)=>{const x0=f.X(a),x1=f.X(b2);if(x1-x0<5)return;const y=f.Y(2.62);c.strokeStyle=t.axis;c.lineWidth=1;c.beginPath();c.moveTo(x0,y-5);c.lineTo(x0,y);c.lineTo(x1,y);c.lineTo(x1,y-5);c.stroke();
+      if(c.measureText(label).width<x1-x0+8){c.fillStyle=t.axis;c.textAlign='center';c.fillText(label,(x0+x1)/2,y+10);}};
+    br(T.reqEnd,T.detect,'3.5 char');
+    if(T.sDE!=null){br(T.detect,T.sDE,'slave processing');br(T.repEnd,T.total,'3.5 char');}else br(T.detect,T.total,'turnaround delay');
+    if(cursor!=null){const x=f.X(cursor);c.strokeStyle=t.bad;c.lineWidth=1.5;c.beginPath();c.moveTo(x,f.T);c.lineTo(x,f.h-f.B);c.stroke();c.lineWidth=1;}}
+  function drawBits(){const T=S.T,by=T.bytes[sel],cells=charFrame(by.b,S.fmt),NC=cells.length;
+    const f=frame(prep($('#m8-bits')),{xmin:0,xmax:NC,ymin:-0.5,ymax:1.4,yticks:[0,1],yfmt:v=>v?'1':'0',padL:30,padT:62,xticks:[1,NC-1],xfmt:v=>v===1?'0':fmtT((v-1)*T.Tb),title:`${by.dir==='req'?'Request':'Reply'} byte ${by.i+1} of ${by.len}: 0x${hex(by.b)} (${by.n})`});
+    drawCells(f,cells);
+    const ones=cells.filter(x=>x.k==='data'&&x.v).length;
+    const what={address:'Every slave compares this byte with its own address. 0 means broadcast.',function:by.b===3?'Function 03: read holding registers.':'Function 06: write a single register.',
+      'register hi':'Register address, high byte first.','register lo':'Register address, low byte.','count hi':'How many registers to read, high byte first.','count lo':'How many registers to read, low byte.',
+      'value hi':'Value to write, high byte first.','value lo':'Value to write, low byte.','byte count':'How many data bytes follow.','CRC lo':'CRC-16 over every byte before it. Modbus sends this one field low byte first.','CRC hi':'High byte of the CRC, sent last.'};
+    const desc=what[by.n]||'Register contents, high byte first.';
+    const dataBits=cells.filter(x=>x.k==='data').map(x=>x.v).join('');
+    const par=S.fmt==='8E1'?` Parity bit ${cells.find(x=>x.k==='par').v}: the data has ${ones} one${ones===1?'':'s'}, and even parity makes the total even.`:'';
+    document.getElementById('m8-desc').textContent=`${desc} On the wire from ${fmtT(by.t0)} to ${fmtT(by.t1)}: start 0, data ${dataBits} (D0 first), ${S.fmt==='8E1'?'parity, ':''}${S.fmt==='8N2'?'two stop bits':'stop 1'}.${par}`;}
+  function readouts(){const T=S.T;setText('m8-tc',`${fmtT(T.Tc)} (${T.nb} bits)`);setText('m8-treq',fmtT(S.fr.req.length*T.Tc));
+    setText('m8-t15',fmtT(T.t15)+(T.b>19200?' (fixed)':''));setText('m8-t35',fmtT(T.t35)+(T.b>19200?' (fixed)':''));setText('m8-total',fmtT(T.total));setText('m8-tps',String(Math.floor(1/T.total)));}
+  function draw(){setText('m8-resp-o',(+inS.value).toFixed(1)+' ms');const p=read();if(typeof p==='string'){err.textContent=p;return;}err.textContent='';
+    const fmt=gP(),fr=build(p);S={p,fr,fmt,T:timing(fr,p,fmt)};if(sel>=S.T.bytes.length)sel=0;
+    layers();drawTL();drawBits();readouts();if(cursor==null)setText('m8-stage','Press Play to follow the transaction in slow motion, or click a byte in the timeline to inspect its bits.');}
+  function play(){cancelAnimationFrame(anim);if(!S)return;
+    if(reduce){cursor=null;setText('m8-stage',stage(S.T.total-1e-9));return;}
+    const dur=10000,st=performance.now();
+    const tick=now=>{const q=Math.min(1,(now-st)/dur);cursor=q*S.T.total;const k=S.T.bytes.findIndex(b=>cursor>=b.t0&&cursor<b.t1);
+      if(k>=0&&k!==sel){sel=k;drawBits();}setText('m8-stage',stage(cursor));drawTL();
+      if(q<1)anim=requestAnimationFrame(tick);else{cursor=null;drawTL();}};
+    anim=requestAnimationFrame(tick);}
+  $('#m8-tl').addEventListener('click',e=>{const r=e.currentTarget.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;let best=null,bd=1e9;
+    for(const q of rects){if(y<q.y0-8||y>q.y1+8)continue;const d=x<q.x0?q.x0-x:x>q.x1?x-q.x1:0;if(d<bd){bd=d;best=q;}}
+    if(best&&bd<14){sel=best.k;drawTL();drawBits();}});
+  const step=d=>{if(!S)return;sel=(sel+d+S.T.bytes.length)%S.T.bytes.length;drawTL();drawBits();};
+  $('#m8-prev').addEventListener('click',()=>step(-1));$('#m8-next').addEventListener('click',()=>step(1));
+  $('#m8-play').addEventListener('click',play);
+  [inA,inR,inV].forEach(x=>x.addEventListener('input',draw));inS.addEventListener('input',draw);
+  reg(draw);
+})();
+
 /* ---------- wiring ---------- */
+updBaud();
 let lastW=0;
 const ro=new ResizeObserver(()=>{const w=document.querySelector('main').clientWidth;if(w!==lastW){lastW=w;redraw();}});
 ro.observe(document.querySelector('main'));
